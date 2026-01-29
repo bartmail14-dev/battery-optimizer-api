@@ -12,5 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ app/
 
-# Shell form CMD for $PORT expansion
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Use shell form with explicit bash for proper $PORT expansion
+# Default to 8080 which Railway uses
+ENV PORT=8080
+SHELL ["/bin/bash", "-c"]
+CMD exec uvicorn app.main:app --host 0.0.0.0 --port $PORT
