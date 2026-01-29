@@ -6,7 +6,7 @@ DATA ENRICHMENT SERVICE - Hoofdservice
 Dit is de kern van de data verrijking. Deze service haalt automatisch alle
 externe data op die nodig is voor een nauwkeurige batterij-analyse.
 
-NOTITIE VOOR BART:
+NOTITIE:
 Deze service is de "orchestrator" - hij coördineert alle andere services:
 1. Bepaalt netbeheerder op basis van postcode
 2. Haalt ACM tarieven op
@@ -48,7 +48,7 @@ class EnrichmentService:
     """
     Hoofdservice die alle data enrichment coördineert.
 
-    NOTITIE VOOR BART:
+    NOTITIE:
     Dit is een "singleton" - er bestaat maar één instantie van deze service.
     Dit voorkomt dat we steeds nieuwe HTTP connecties maken naar externe APIs.
 
@@ -62,7 +62,7 @@ class EnrichmentService:
         """
         Initialiseert de externe API clients.
 
-        NOTITIE VOOR BART:
+        NOTITIE:
         Elke client heeft zijn eigen configuratie en API key (uit environment).
         De clients gebruiken httpx voor async HTTP requests.
         """
@@ -74,7 +74,7 @@ class EnrichmentService:
         """
         Sluit alle client connecties netjes af.
 
-        NOTITIE VOOR BART:
+        NOTITIE:
         Dit wordt aangeroepen bij shutdown van de API.
         Zie app/main.py -> lifespan() functie.
         """
@@ -98,7 +98,7 @@ class EnrichmentService:
         """
         Verrijk een energieprofiel met alle externe data.
 
-        NOTITIE VOOR BART:
+        NOTITIE:
         Dit is de hoofdfunctie! Geef postcode + verbruik en je krijgt alles terug:
         - Welke netbeheerder (Liander, Stedin, Enexis, etc.)
         - Hoeveel je betaalt aan netkosten
@@ -127,7 +127,7 @@ class EnrichmentService:
         # =====================================================================
         # STAP 1: Netbeheerder bepalen op basis van postcode
         # =====================================================================
-        # NOTITIE VOOR BART:
+        # NOTITIE:
         # Nederland heeft 6 grote netbeheerders. Op basis van de postcode
         # bepalen we welke netbeheerder van toepassing is.
         netbeheerder = get_netbeheerder(postcode)
@@ -136,7 +136,7 @@ class EnrichmentService:
         # =====================================================================
         # STAP 2: ACM tarieven ophalen
         # =====================================================================
-        # NOTITIE VOOR BART:
+        # NOTITIE:
         # De ACM (Autoriteit Consument & Markt) stelt elk jaar de maximale
         # tarieven vast die netbeheerders mogen rekenen. Dit zijn de 2025 tarieven.
         tarieven = get_tarieven(netbeheerder)
@@ -145,7 +145,7 @@ class EnrichmentService:
         # =====================================================================
         # STAP 3: Netkosten berekenen
         # =====================================================================
-        # NOTITIE VOOR BART:
+        # NOTITIE:
         # Netkosten bestaan uit:
         # - Vastrecht (vast bedrag per jaar)
         # - Capaciteitstarief (per kW piekvermogen)
@@ -155,7 +155,7 @@ class EnrichmentService:
         # =====================================================================
         # STAP 4: Externe API calls (parallel voor snelheid)
         # =====================================================================
-        # NOTITIE VOOR BART:
+        # NOTITIE:
         # We roepen 3 externe APIs tegelijk aan met asyncio.gather().
         # Dit is veel sneller dan ze achter elkaar aan te roepen!
         # Als één API faalt, krijgen we een Exception terug ipv een crash.
@@ -196,7 +196,7 @@ class EnrichmentService:
         # =====================================================================
         # STAP 5: Energiebelasting berekenen
         # =====================================================================
-        # NOTITIE VOOR BART:
+        # NOTITIE:
         # Energiebelasting wordt berekend in schijven:
         # - Schijf 1: 0-10.000 kWh (hoogste tarief)
         # - Schijf 2: 10.000-50.000 kWh
@@ -208,7 +208,7 @@ class EnrichmentService:
         # =====================================================================
         # STAP 6: PV schatting (als er teruglevering is)
         # =====================================================================
-        # NOTITIE VOOR BART:
+        # NOTITIE:
         # Als iemand teruglevert, heeft hij zonnepanelen. We schatten dan:
         # - Hoeveel kWp zonnepanelen geïnstalleerd zijn
         # - Hoeveel ze per jaar produceren
@@ -226,7 +226,7 @@ class EnrichmentService:
         # =====================================================================
         # STAP 7: Subsidies berekenen
         # =====================================================================
-        # NOTITIE VOOR BART:
+        # NOTITIE:
         # Voor batterijen zijn verschillende subsidies beschikbaar:
         # - EIA: Energie-investeringsaftrek (40% van investering aftrekbaar)
         # - MIA: Milieu-investeringsaftrek (voor grotere batterijen)
@@ -245,7 +245,7 @@ class EnrichmentService:
         # =====================================================================
         # STAP 8: Data compleetheid bepalen
         # =====================================================================
-        # NOTITIE VOOR BART:
+        # NOTITIE:
         # We geven aan hoe compleet de data is. Als externe APIs falen,
         # daalt de compleetheid. Dit helpt de gebruiker inschatten hoe
         # betrouwbaar de resultaten zijn.
@@ -276,7 +276,7 @@ class EnrichmentService:
 # =============================================================================
 # SINGLETON PATTERN
 # =============================================================================
-# NOTITIE VOOR BART:
+# NOTITIE:
 # We maken maar één instantie van de EnrichmentService aan (singleton).
 # Dit voorkomt dat we bij elke request nieuwe HTTP connecties maken.
 _service: Optional[EnrichmentService] = None
@@ -286,7 +286,7 @@ async def get_service() -> EnrichmentService:
     """
     Haalt de singleton EnrichmentService instantie op (of maakt hem aan).
 
-    NOTITIE VOOR BART:
+    NOTITIE:
     Gebruik deze functie om de service te krijgen:
         service = await get_service()
         result = await service.enrich(...)
@@ -301,7 +301,7 @@ async def close_service():
     """
     Sluit de singleton service af (voor shutdown).
 
-    NOTITIE VOOR BART:
+    NOTITIE:
     Dit wordt aangeroepen vanuit app/main.py bij shutdown van de API.
     """
     global _service

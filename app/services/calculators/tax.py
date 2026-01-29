@@ -5,7 +5,7 @@ ENERGIEBELASTING CALCULATOR
 
 Berekent de Nederlandse energiebelasting en ODE voor elektriciteit.
 
-NOTITIE VOOR BART:
+NOTITIE:
 In Nederland betaal je over je elektriciteitsverbruik:
 1. Energiebelasting (EB) - gaat naar de schatkist
 2. ODE (Opslag Duurzame Energie) - financiert duurzame energieprojecten
@@ -33,7 +33,7 @@ def bereken_energiebelasting(
     """
     Bereken energiebelasting en ODE op basis van jaarverbruik.
 
-    NOTITIE VOOR BART:
+    NOTITIE:
     Deze functie berekent hoeveel belasting je betaalt over je elektriciteit.
 
     Voorbeeld voor 50.000 kWh zakelijk:
@@ -56,7 +56,7 @@ def bereken_energiebelasting(
     # =========================================================================
     # STAP 1: Verdeel verbruik over de schijven
     # =========================================================================
-    # NOTITIE VOOR BART:
+    # NOTITIE:
     # We verdelen het verbruik over 3 schijven met elk een eigen tarief.
     # Voorbeeld: 75.000 kWh wordt:
     # - Schijf 1: 10.000 kWh (de eerste 10k)
@@ -78,7 +78,7 @@ def bereken_energiebelasting(
     # =========================================================================
     # STAP 2: Bereken energiebelasting
     # =========================================================================
-    # NOTITIE VOOR BART:
+    # NOTITIE:
     # Elke schijf × eigen tarief, dan optellen
     eb_totaal = (
         schijf_1 * rates.EB_TARIEF_1 +  # Hoogste tarief
@@ -89,7 +89,7 @@ def bereken_energiebelasting(
     # =========================================================================
     # STAP 3: Zakelijke korting toepassen
     # =========================================================================
-    # NOTITIE VOOR BART:
+    # NOTITIE:
     # Zakelijke klanten met >10.000 kWh krijgen een vaste korting.
     # Dit is een belastingteruggave die je moet aanvragen bij de Belastingdienst.
     if is_zakelijk and verbruik_kwh > rates.EB_SCHIJF_1_GRENS:
@@ -98,7 +98,7 @@ def bereken_energiebelasting(
     # =========================================================================
     # STAP 4: Bereken ODE (Opslag Duurzame Energie)
     # =========================================================================
-    # NOTITIE VOOR BART:
+    # NOTITIE:
     # ODE heeft dezelfde schijven als energiebelasting, maar andere tarieven.
     # ODE financiert subsidies voor duurzame energie (zonnepanelen, windmolens).
     ode_totaal = (

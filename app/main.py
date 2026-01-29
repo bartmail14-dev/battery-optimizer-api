@@ -10,7 +10,7 @@ Dit is het startpunt van de Battery Optimizer API. Deze API biedt:
 - Data verrijking met externe bronnen (netbeheerder, tarieven, subsidies)
 - Export naar CSV/Excel
 
-NOTITIE VOOR BART:
+NOTITIE:
 - De API draait op Railway (https://comcalculator-production.up.railway.app)
 - Documentatie beschikbaar op /docs (Swagger UI)
 - Health check op /health (gebruikt door Railway voor deployment)
@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):
     """
     Beheert de levenscyclus van de applicatie.
 
-    NOTITIE VOOR BART:
+    NOTITIE:
     - Dit wordt uitgevoerd bij opstarten en afsluiten van de API
     - Bij opstarten: logging dat de API start
     - Bij afsluiten: cleanup van externe API connecties (ENTSO-E, TenneT, etc.)
@@ -85,7 +85,7 @@ def create_app() -> FastAPI:
     """
     Creëert en configureert de FastAPI applicatie.
 
-    NOTITIE VOOR BART:
+    NOTITIE:
     Deze functie maakt de FastAPI app aan met alle configuratie:
     - Titel en versie voor de docs
     - CORS middleware (zodat de frontend erbij kan)
@@ -149,7 +149,7 @@ def create_app() -> FastAPI:
         """
         Root endpoint - geeft basis API informatie.
 
-        NOTITIE VOOR BART:
+        NOTITIE:
         Dit is handig om snel te checken of de API draait.
         Bezoek gewoon de root URL om te zien of alles werkt.
         """
@@ -164,7 +164,7 @@ def create_app() -> FastAPI:
         """
         Health check endpoint voor Railway deployment.
 
-        NOTITIE VOOR BART:
+        NOTITIE:
         Railway checkt dit endpoint om te zien of de container gezond is.
         Als dit endpoint niet 200 OK teruggeeft, herstart Railway de container.
 

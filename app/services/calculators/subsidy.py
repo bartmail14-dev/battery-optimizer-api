@@ -5,7 +5,7 @@ SUBSIDIE CALCULATOR - EIA, MIA, ISDE, Flex-e
 
 Berekent beschikbare subsidies en fiscale voordelen voor batterij-investeringen.
 
-NOTITIE VOOR BART:
+NOTITIE:
 Voor een batterij-investering zijn verschillende voordelen beschikbaar:
 
 1. EIA (Energie-investeringsaftrek)
@@ -37,7 +37,7 @@ class EIAConfig2025:
     """
     EIA configuratie voor 2025.
 
-    NOTITIE VOOR BART:
+    NOTITIE:
     Dit zijn de parameters voor de EIA regeling in 2025.
     Elk jaar worden deze door RVO gepubliceerd in de "Energielijst".
     """
@@ -61,7 +61,7 @@ def bereken_eia(
     """
     Bereken EIA (Energie-investeringsaftrek) voordeel.
 
-    NOTITIE VOOR BART:
+    NOTITIE:
     EIA werkt zo:
     1. Je investeert €30.000 in een batterij
     2. Je mag 40% = €12.000 aftrekken van je winst
@@ -85,7 +85,7 @@ def bereken_eia(
     # =========================================================================
     # CHECK: Minimum investering
     # =========================================================================
-    # NOTITIE VOOR BART:
+    # NOTITIE:
     # EIA is alleen beschikbaar voor investeringen vanaf €2.500
     if investering < cfg.MIN_INVESTERING:
         return EIAResultaat(
@@ -101,7 +101,7 @@ def bereken_eia(
     # =========================================================================
     # BEREKENING: EIA aftrek en VPB voordeel
     # =========================================================================
-    # NOTITIE VOOR BART:
+    # NOTITIE:
     # Via code 260101 (deelmarkt) is EIA altijd mogelijk voor batterijen.
     # Je hoeft geen zonnepanelen te hebben!
 
@@ -136,7 +136,7 @@ def bereken_subsidies(
     """
     Bereken alle beschikbare subsidies en fiscale voordelen.
 
-    NOTITIE VOOR BART:
+    NOTITIE:
     Deze functie checkt alle mogelijke subsidies:
     - EIA (zakelijk, altijd beschikbaar)
     - MIA (zakelijk, grote batterijen)
@@ -162,7 +162,7 @@ def bereken_subsidies(
     # =========================================================================
     # MIA (Milieu-investeringsaftrek)
     # =========================================================================
-    # NOTITIE VOOR BART:
+    # NOTITIE:
     # MIA is extra aftrek bovenop EIA voor milieuvriendelijke investeringen.
     # Voor batterijen geldt dit alleen voor grotere systemen (>50 kWh).
     mia_eligible = batterij_kwh >= 50 and is_zakelijk
@@ -170,7 +170,7 @@ def bereken_subsidies(
     # =========================================================================
     # ISDE (Investeringssubsidie Duurzame Energie)
     # =========================================================================
-    # NOTITIE VOOR BART:
+    # NOTITIE:
     # ISDE is een directe subsidie voor PARTICULIEREN.
     # Je krijgt tot €100 per kWh, max €2.000.
     # Alleen voor kleinere batterijen (<20 kWh).
@@ -180,7 +180,7 @@ def bereken_subsidies(
     # =========================================================================
     # Flex-e subsidie
     # =========================================================================
-    # NOTITIE VOOR BART:
+    # NOTITIE:
     # Flex-e is een subsidie voor batterijen in CONGESTIEGEBIEDEN.
     # Als het stroomnet overbelast is, kan je batterij helpen door:
     # - Minder stroom af te nemen tijdens piek

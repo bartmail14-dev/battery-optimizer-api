@@ -100,7 +100,7 @@ uvicorn app.main:app --reload --port 8000
 - **structlog** - Gestructureerde logging
 - **Railway** - Hosting
 
-## 📝 Notities voor Bart
+## 📝 Waar te beginnen
 
 De belangrijkste bestanden om te begrijpen:
 1. `app/main.py` - Start hier, bekijk hoe de API opgebouwd is
