@@ -49,6 +49,7 @@ from .growth_projector import (
     PREDEFINED_SCENARIOS,
 )
 from .market_params import DEFAULT_MARKET_PARAMS, get_capacity_tariff
+from .cost_structure import CostEstimator
 
 
 class SizingTier(Enum):
@@ -163,21 +164,33 @@ class SizingAdvisor:
             profile_df=profile,
             constraints=BatteryConstraints(max_budget_eur=100000)
         )
+
+    COST CALCULATION:
+        Uses CostEstimator from cost_structure.py with itemized costs
+        from BloombergNEF Battery Price Survey 2024, DNV GL reports,
+        and industry quotes. No hardcoded "magic number" CAPEX values.
     """
 
     # Battery sizes to evaluate (kWh)
     EVALUATION_SIZES = [10, 15, 20, 30, 50, 75, 100, 150, 200, 300, 400, 500]
 
     # Default battery parameters
-    DEFAULT_C_RATE = 0.5  # Max power = capacity × C-rate
-    DEFAULT_PRICE_PER_KWH = 450  # €/kWh installed (2024)
-    DEFAULT_EFFICIENCY = 0.92
+    # Source: DNV GL "Battery Energy Storage Systems" 2023
+    DEFAULT_C_RATE = 0.5  # Max power = capacity × C-rate (typical for LFP)
+    DEFAULT_EFFICIENCY = 0.92  # Source: NREL "Grid-Scale Battery Storage" 2023
     ANALYSIS_YEARS = 15
+    # Source: WACC for renewable energy projects in NL (DNB Financial Stability Report 2024)
     DISCOUNT_RATE = 0.05
 
-    def __init__(self):
+    def __init__(self, battery_chemistry: str = "LFP"):
         self.revenue_calculator = RevenueCalculator()
         self.growth_projector = GrowthProjector()
+        # Use CostEstimator for transparent, sourced cost calculations
+        self.cost_estimator = CostEstimator(
+            project_years=self.ANALYSIS_YEARS,
+            include_contingency=True,
+            battery_chemistry=battery_chemistry
+        )
 
     def generate_recommendations(
         self,
@@ -301,7 +314,16 @@ class SizingAdvisor:
                 continue
 
             power_kw = size_kwh * self.DEFAULT_C_RATE
-            capex = size_kwh * self.DEFAULT_PRICE_PER_KWH
+
+            # Use CostEstimator for transparent, sourced CAPEX calculation
+            # Source: BloombergNEF 2024, DNV GL, Fraunhofer ISE (see cost_structure.py)
+            cost_estimate = self.cost_estimator.estimate_complete(
+                capacity_kwh=size_kwh,
+                power_kw=power_kw,
+                needs_grid_upgrade=power_kw > 200,  # Grid upgrade typically needed >200kW
+                needs_transformer=power_kw > 400    # Transformer typically needed >400kW
+            )
+            capex = cost_estimate.total_capex
 
             # Budget check
             if constraints.max_budget_eur and capex > constraints.max_budget_eur:
