@@ -54,18 +54,24 @@ class TariffStructure:
     """
     Elektriciteits tarief structuur voor Nederlandse grootverbruikers.
 
-    Capaciteitstarief componenten (typisch):
-    - Netbeheerder capaciteit: €5-15/kW/maand
-    - Piekmarge leverancier: €10-20/kW/maand
-    - Transportonafhankelijk: €2-5/kW/maand
-    Totaal typisch: €20-40/kW/maand voor industrie
+    Capaciteitstarief componenten (typisch industrieel contract):
+    - Netbeheerder transportcapaciteit: €8-15/kW/maand
+    - Piekmarge/contractueel: €15-30/kW/maand
+    - Demand charge (piekverbruik straffactor): €10-25/kW/maand
+    - Blindstroom/kVAr heffing: €2-5/kW/maand
+
+    Totaal voor middelgrote industrie: €35-75/kW/maand
+    Grote industrie met demand charges: €50-100/kW/maand
+
+    We gebruiken €52/kW/maand als conservatieve schatting voor
+    een middelgrote fabriek met standaard industrieel contract.
     """
-    peak_rate: float = 0.32           # €/kWh piek (7:00-21:00)
-    off_peak_rate: float = 0.18       # €/kWh dal (21:00-7:00)
+    peak_rate: float = 0.28           # €/kWh piek (7:00-21:00)
+    off_peak_rate: float = 0.14       # €/kWh dal (21:00-7:00) - groter verschil
     peak_hours_start: int = 7         # Start piekuren
     peak_hours_end: int = 21          # Einde piekuren
-    capacity_tariff: float = 28.00    # €/kW/maand piekvermogen (realistisch industrieel)
-    feed_in_tariff: float = 0.07      # €/kWh teruglevering
+    capacity_tariff: float = 52.00    # €/kW/maand piekvermogen (industrieel contract)
+    feed_in_tariff: float = 0.06      # €/kWh teruglevering
 
 
 @dataclass
@@ -278,16 +284,16 @@ class BatteryDispatchSimulator:
         load_max = float(net_load.max())
         load_avg = float(net_load.mean())
 
-        # CRITICAL: Use P99 as discharge threshold to focus on ACTUAL peaks only
-        # This ensures battery capacity is reserved for the real peak moments
-        # P99 = only discharge during top 1% of loads
-        # P95 = target level after shaving
-        load_p99 = float(net_load.quantile(0.99))  # Discharge threshold
-        load_p95 = float(net_load.quantile(0.95))  # Target level
+        # Use P97 as discharge threshold and P90 as target
+        # This allows more peak shaving opportunity while still being selective
+        # P97 = discharge during top 3% of loads
+        # P90 = target level after shaving
+        load_p97 = float(net_load.quantile(0.97))  # Discharge threshold
+        load_p90 = float(net_load.quantile(0.90))  # Target level
 
-        # But ensure target is still meaningful (at least 10% reduction potential)
-        if load_p95 > load_max * 0.95:
-            load_p95 = load_max * 0.90
+        # Ensure meaningful target - at least 5% below max
+        load_p99 = load_p97  # Backward compat naming
+        load_p95 = min(load_p90, load_max * 0.95)
 
         # Expose as load_p70 (target) and load_p85 (threshold) for backward compatibility
         load_p70 = load_p95  # Target after shaving
