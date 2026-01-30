@@ -28,7 +28,7 @@ from contextlib import asynccontextmanager
 import structlog
 
 from app.config import get_settings
-from app.api.routes import upload, analyze, optimize, export, enrich
+from app.api.routes import upload, analyze, optimize, export, enrich, stream
 from app.services.enrichment import close_service
 
 # =============================================================================
@@ -140,6 +140,9 @@ def create_app() -> FastAPI:
 
     # Enrich: Data verrijking (netbeheerder, tarieven, subsidies, congestie)
     app.include_router(enrich.router, prefix="/api/v1", tags=["Enrichment"])
+
+    # Stream: Real-time SSE progress updates
+    app.include_router(stream.router, prefix="/api/v1", tags=["Streaming"])
 
     # -------------------------------------------------------------------------
     # BASIS ENDPOINTS

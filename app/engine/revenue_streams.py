@@ -231,8 +231,12 @@ class RevenueCalculator:
 
         interval_hours = 0.25  # 15-minuten intervallen
 
-        afname = df['afname'].fillna(0)
-        teruglevering = df.get('teruglevering', pd.Series([0] * len(df))).fillna(0)
+        # Support both column naming conventions
+        afname_col = 'afname_kwh' if 'afname_kwh' in df.columns else 'afname'
+        teruglevering_col = 'teruglevering_kwh' if 'teruglevering_kwh' in df.columns else 'teruglevering'
+
+        afname = df[afname_col].fillna(0)
+        teruglevering = df[teruglevering_col].fillna(0) if teruglevering_col in df.columns else pd.Series([0] * len(df))
 
         return {
             "peak_kw": afname.max() / interval_hours,

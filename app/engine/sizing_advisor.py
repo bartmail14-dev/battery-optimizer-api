@@ -262,7 +262,9 @@ class SizingAdvisor:
             }
 
         interval_hours = 0.25
-        afname = df['afname'].fillna(0)
+        # Support both column naming conventions
+        afname_col = 'afname_kwh' if 'afname_kwh' in df.columns else 'afname'
+        afname = df[afname_col].fillna(0)
 
         peak_kw = afname.max() / interval_hours
         avg_kw = afname.mean() / interval_hours
