@@ -28,7 +28,7 @@ from contextlib import asynccontextmanager
 import structlog
 
 from app.config import get_settings
-from app.api.routes import upload, analyze, optimize, export, enrich, stream, market
+from app.api.routes import upload, analyze, optimize, export, enrich, stream, market, sensitivity
 from app.services.enrichment import close_service
 from app.services.market_data import close_market_data_service
 
@@ -148,6 +148,9 @@ def create_app() -> FastAPI:
 
     # Market: Marktdata endpoints (ENTSO-E, TenneT, FCR, aFRR, GOPACS)
     app.include_router(market.router, prefix="/api/v1/market", tags=["Market Data"])
+
+    # Sensitivity Analysis - server-side calculations for frontend sliders
+    app.include_router(sensitivity.router, prefix="/api/v1", tags=["Sensitivity"])
 
     # -------------------------------------------------------------------------
     # BASIS ENDPOINTS
