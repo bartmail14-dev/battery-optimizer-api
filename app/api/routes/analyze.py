@@ -312,10 +312,13 @@ async def run_monte_carlo_analysis(request: MonteCarloRequest):
         profile_df = df.copy()
         profile_df['timestamp'] = pd.to_datetime(profile_df['timestamp'])
         profile_df['afname_kwh'] = pd.to_numeric(profile_df['afname_kwh'], errors='coerce').fillna(0)
-        profile_df['teruglevering_kwh'] = pd.to_numeric(
-            profile_df.get('teruglevering_kwh', 0),
-            errors='coerce'
-        ).fillna(0)
+        if 'teruglevering_kwh' in profile_df.columns:
+            profile_df['teruglevering_kwh'] = pd.to_numeric(
+                profile_df['teruglevering_kwh'],
+                errors='coerce'
+            ).fillna(0)
+        else:
+            profile_df['teruglevering_kwh'] = 0
 
         # === INITIALISEER ENGINE ===
         max_power = request.battery.max_power_kw or (request.battery.capacity_kwh / 2)
@@ -524,10 +527,13 @@ async def optimize_battery_size(request: OptimizeSizeRequest):
         profile_df = df.copy()
         profile_df['timestamp'] = pd.to_datetime(profile_df['timestamp'])
         profile_df['afname_kwh'] = pd.to_numeric(profile_df['afname_kwh'], errors='coerce').fillna(0)
-        profile_df['teruglevering_kwh'] = pd.to_numeric(
-            profile_df.get('teruglevering_kwh', 0),
-            errors='coerce'
-        ).fillna(0)
+        if 'teruglevering_kwh' in profile_df.columns:
+            profile_df['teruglevering_kwh'] = pd.to_numeric(
+                profile_df['teruglevering_kwh'],
+                errors='coerce'
+            ).fillna(0)
+        else:
+            profile_df['teruglevering_kwh'] = 0
 
         # Size range
         size_range = None
@@ -609,10 +615,13 @@ async def get_simulation_timeseries(
         profile_df = df.copy()
         profile_df['timestamp'] = pd.to_datetime(profile_df['timestamp'])
         profile_df['afname_kwh'] = pd.to_numeric(profile_df['afname_kwh'], errors='coerce').fillna(0)
-        profile_df['teruglevering_kwh'] = pd.to_numeric(
-            profile_df.get('teruglevering_kwh', 0),
-            errors='coerce'
-        ).fillna(0)
+        if 'teruglevering_kwh' in profile_df.columns:
+            profile_df['teruglevering_kwh'] = pd.to_numeric(
+                profile_df['teruglevering_kwh'],
+                errors='coerce'
+            ).fillna(0)
+        else:
+            profile_df['teruglevering_kwh'] = 0
 
         # Map strategy
         strategy_map = {

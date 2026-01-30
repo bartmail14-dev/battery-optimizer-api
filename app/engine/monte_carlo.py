@@ -675,9 +675,10 @@ class MonteCarloEngine:
 
         # Auto-detect size range gebaseerd op profiel
         if size_range is None:
-            net_load = profile_df['afname_kwh'] - profile_df.get('teruglevering_kwh', 0)
-            peak_load = net_load.max()
-            daily_energy = net_load.sum() / max(1, len(profile_df) / 96)  # 96 intervals per dag
+            teruglevering = profile_df['teruglevering_kwh'] if 'teruglevering_kwh' in profile_df.columns else 0
+            net_load = profile_df['afname_kwh'] - teruglevering
+            peak_load = float(net_load.max())
+            daily_energy = float(net_load.sum()) / max(1, len(profile_df) / 96)  # 96 intervals per dag
 
             min_size = max(5, daily_energy * 0.1)
             max_size = min(500, daily_energy * 2)
