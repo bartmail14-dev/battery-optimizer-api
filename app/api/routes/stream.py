@@ -714,6 +714,17 @@ async def analyze_battery_stream(
                     logger.warning(f"Chart generation error: {e}", exc_info=True)
 
             # === PHASE 6: COMPLETE ===
+            # Calculate profile stats for frontend
+            afname_kwh_series = profile_df['afname_kwh']
+            profile_stats = {
+                "peak_kw": round(float(afname_kwh_series.max() * 4), 1),  # Convert 15-min kWh to kW
+                "average_kw": round(float(afname_kwh_series.mean() * 4), 1),
+                "p95_kw": round(float(afname_kwh_series.quantile(0.95) * 4), 1),
+                "p99_kw": round(float(afname_kwh_series.quantile(0.99) * 4), 1),
+                "total_kwh": round(float(afname_kwh_series.sum()), 0),
+                "annual_consumption_kwh": round(float(afname_kwh_series.sum() * (365 / (len(profile_df) / 96))), 0),
+            }
+
             yield create_completed_event(
                 optimal_size_kwh=optimal["size_kwh"],
                 scenarios=all_results,
@@ -722,6 +733,7 @@ async def analyze_battery_stream(
                 growth_projections={k: v.to_dict() for k, v in growth_projections.items()} if growth_projections else None,
                 sizing_advice=sizing_advice.to_dict() if sizing_advice else None,
                 charts=charts,
+                profile_stats=profile_stats,
             ).to_sse()
 
             logger.info(
