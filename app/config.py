@@ -7,7 +7,7 @@ class Settings(BaseSettings):
 
     # App settings
     app_name: str = "Battery Optimizer API"
-    version: str = "1.0.0"
+    version: str = "1.0.1"
     debug: bool = False
 
     # Server settings
