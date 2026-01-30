@@ -54,14 +54,17 @@ def analyze_profile(df: pd.DataFrame) -> ProfileAnalysis:
         'teruglevering_kw': ['mean']
     }).reset_index()
 
+    # Flatten MultiIndex columns
+    hourly_stats.columns = ['hour', 'afname_mean', 'afname_max', 'afname_std', 'teruglevering_mean']
+
     hourly_profile = [
         HourlyProfile(
             hour=int(row['hour']),
-            avg_afname_kw=round(float(row[('afname_kw', 'mean')]), 3),
-            avg_teruglevering_kw=round(float(row[('teruglevering_kw', 'mean')]), 3),
-            peak_afname_kw=round(float(row[('afname_kw', 'max')]), 3),
-            std_dev=round(float(row[('afname_kw', 'std')]), 3)
-            if pd.notna(row[('afname_kw', 'std')]) else 0
+            avg_afname_kw=round(float(row['afname_mean']), 3),
+            avg_teruglevering_kw=round(float(row['teruglevering_mean']), 3),
+            peak_afname_kw=round(float(row['afname_max']), 3),
+            std_dev=round(float(row['afname_std']), 3)
+            if pd.notna(row['afname_std']) else 0
         )
         for _, row in hourly_stats.iterrows()
     ]
