@@ -274,22 +274,34 @@ class BatteryDispatchSimulator:
         # Pre-calculate statistics voor strategieën
         net_load = df['afname_kwh'] - df['teruglevering_kwh']
 
-        # BELANGRIJK: Voor effectieve peak shaving, gebruik MAX-gebaseerde thresholds
-        # niet percentiel-gebaseerde (die veel te laag zijn voor echte pieken)
+        # Load statistics
         load_max = float(net_load.max())
         load_avg = float(net_load.mean())
 
-        # Target: reduceer pieken tot 85% van maximum (effectieve 15% piekvermindering)
-        # Threshold voor ontladen: 90% van max (alleen bij echte pieken)
-        load_p70 = load_max * 0.85  # Target load na peak shaving
-        load_p85 = load_max * 0.90  # Threshold voor discharge actie
+        # CRITICAL: Use P99 as discharge threshold to focus on ACTUAL peaks only
+        # This ensures battery capacity is reserved for the real peak moments
+        # P99 = only discharge during top 1% of loads
+        # P95 = target level after shaving
+        load_p99 = float(net_load.quantile(0.99))  # Discharge threshold
+        load_p95 = float(net_load.quantile(0.95))  # Target level
 
-        logger.debug(
-            "Load statistics",
-            load_max_kwh=round(load_max, 2),
-            load_avg_kwh=round(load_avg, 2),
-            threshold_discharge_kwh=round(load_p85, 2),
-            target_load_kwh=round(load_p70, 2)
+        # But ensure target is still meaningful (at least 10% reduction potential)
+        if load_p95 > load_max * 0.95:
+            load_p95 = load_max * 0.90
+
+        # Expose as load_p70 (target) and load_p85 (threshold) for backward compatibility
+        load_p70 = load_p95  # Target after shaving
+        load_p85 = load_p99  # Discharge threshold
+
+        # Count intervals above threshold for validation
+        intervals_above = int((net_load > load_p85).sum())
+        logger.info(
+            "Peak shaving configuration",
+            load_max_kw=round(load_max * 4, 1),
+            discharge_threshold_kw=round(load_p85 * 4, 1),
+            target_kw=round(load_p70 * 4, 1),
+            intervals_above_threshold=intervals_above,
+            percent_above=round(intervals_above / len(net_load) * 100, 1)
         )
 
         avg_tariff = self._calculate_average_tariff(df, tariffs)
