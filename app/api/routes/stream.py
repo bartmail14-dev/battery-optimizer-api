@@ -199,7 +199,7 @@ async def analyze_battery_stream(
                     "records": len(profile_df),
                     "annual_consumption_kwh": round(float(profile_df['afname_kwh'].sum()), 0),
                     "peak_kw": round(float(profile_df['afname_kwh'].max() * 4), 1),
-                    "days_of_data": analysis.days_of_data,
+                    "days_of_data": analysis.data_days,
                 }
             ).to_sse()
 
