@@ -5,7 +5,7 @@
 | Item | Waarde |
 |------|--------|
 | **Status** | **[KRITIEK] NOT READY** |
-| Datum analyse | 2026-01-30 21:32:15 |
+| Datum analyse | 2026-01-30 21:42:15 |
 | MUST HAVE aanwezig | 7/12 |
 | SHOULD HAVE aanwezig | 7/10 |
 
@@ -129,5 +129,5 @@ Totdat de ontbrekende velden zijn geimplementeerd:
 
 ---
 
-*Rapport gegenereerd: 2026-01-30 21:32:15*
+*Rapport gegenereerd: 2026-01-30 21:42:15*
 *Battery Optimizer Decision Readiness Check v1.0*

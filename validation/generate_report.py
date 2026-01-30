@@ -29,13 +29,6 @@ def run_full_validation():
     """
     Run alle validatie fasen en genereer compleet rapport.
     """
-    # Set UTF-8 encoding for Windows console
-    import sys
-    import io
-    if sys.platform == 'win32':
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-
     print("\n" + "="*70)
     print("[VALIDATION] BATTERY OPTIMIZER - VOLLEDIGE VALIDATIE")
     print("="*70)
