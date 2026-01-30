@@ -42,6 +42,8 @@ from app.services.clients.entsoe import ENTSOEClient
 from app.services.clients.tennet import TennetClient
 from app.services.clients.netbeheer import NetbeheerClient
 from app.services.clients.knmi import schat_pv_productie
+from app.services.clients.fcr_afrr import FCRAFRRClient
+from app.services.clients.gopacs import GOPACSClient
 
 
 class EnrichmentService:
@@ -69,6 +71,8 @@ class EnrichmentService:
         self.entsoe = ENTSOEClient()      # Day-ahead stroomprijzen
         self.tennet = TennetClient()       # Onbalansprijzen
         self.netbeheer = NetbeheerClient() # Congestiestatus
+        self.fcr_afrr = FCRAFRRClient()   # FCR/aFRR balancing prijzen
+        self.gopacs = GOPACSClient()       # Congestiemanagement
 
     async def close(self):
         """
@@ -81,7 +85,9 @@ class EnrichmentService:
         await asyncio.gather(
             self.entsoe.close(),
             self.tennet.close(),
-            self.netbeheer.close()
+            self.netbeheer.close(),
+            self.fcr_afrr.close(),
+            self.gopacs.close()
         )
 
     async def enrich(
@@ -156,7 +162,7 @@ class EnrichmentService:
         # STAP 4: Externe API calls (parallel voor snelheid)
         # =====================================================================
         # NOTITIE:
-        # We roepen 3 externe APIs tegelijk aan met asyncio.gather().
+        # We roepen 6 externe APIs tegelijk aan met asyncio.gather().
         # Dit is veel sneller dan ze achter elkaar aan te roepen!
         # Als één API faalt, krijgen we een Exception terug ipv een crash.
         now = datetime.now()
@@ -167,10 +173,13 @@ class EnrichmentService:
             self.netbeheer.get_congestie(postcode, netbeheerder),
             self.entsoe.get_day_ahead_prices(jaar_geleden, now),
             self.tennet.get_imbalance_prices(maand_geleden, now),
+            self.fcr_afrr.get_fcr_prices(maand_geleden, now),
+            self.fcr_afrr.get_afrr_prices(maand_geleden, now),
+            self.gopacs.get_gopacs_data(postcode=postcode),
             return_exceptions=True  # Voorkom crash bij API fout
         )
 
-        congestie, commodity, onbalans = results
+        congestie, commodity, onbalans, fcr, afrr, gopacs = results
 
         # --- Verwerk congestie resultaat ---
         if isinstance(congestie, Exception):
@@ -192,6 +201,27 @@ class EnrichmentService:
             onbalans = None
         else:
             bronnen.append("TenneT")
+
+        # --- Verwerk FCR resultaat ---
+        if isinstance(fcr, Exception):
+            warnings.append(f"FCR ophalen mislukt: {fcr}")
+            fcr = self.fcr_afrr._fcr_fallback()
+        else:
+            bronnen.append("TenneT/ENTSO-E FCR")
+
+        # --- Verwerk aFRR resultaat ---
+        if isinstance(afrr, Exception):
+            warnings.append(f"aFRR ophalen mislukt: {afrr}")
+            afrr = self.fcr_afrr._afrr_fallback()
+        else:
+            bronnen.append("TenneT aFRR")
+
+        # --- Verwerk GOPACS resultaat ---
+        if isinstance(gopacs, Exception):
+            warnings.append(f"GOPACS ophalen mislukt: {gopacs}")
+            gopacs = self.gopacs._fallback()
+        else:
+            bronnen.append("GOPACS/Netbeheer NL")
 
         # =====================================================================
         # STAP 5: Energiebelasting berekenen
@@ -249,8 +279,9 @@ class EnrichmentService:
         # We geven aan hoe compleet de data is. Als externe APIs falen,
         # daalt de compleetheid. Dit helpt de gebruiker inschatten hoe
         # betrouwbaar de resultaten zijn.
-        compleetheid = 1.0 - (len(warnings) * 0.15)
-        compleetheid = max(0.5, min(1.0, compleetheid))
+        # Met 6 externe APIs, elke failure verlaagt met ~10%
+        compleetheid = 1.0 - (len(warnings) * 0.10)
+        compleetheid = max(0.4, min(1.0, compleetheid))
 
         # =====================================================================
         # RESULTAAT SAMENSTELLEN
@@ -264,6 +295,9 @@ class EnrichmentService:
             congestie=congestie,
             commodity_prijzen=commodity,
             onbalans_prijzen=onbalans,
+            fcr_prijzen=fcr,
+            afrr_prijzen=afrr,
+            gopacs_data=gopacs,
             energie_belasting=energie_belasting,
             subsidies=subsidies,
             pv_schatting=pv_schatting,

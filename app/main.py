@@ -28,8 +28,9 @@ from contextlib import asynccontextmanager
 import structlog
 
 from app.config import get_settings
-from app.api.routes import upload, analyze, optimize, export, enrich, stream
+from app.api.routes import upload, analyze, optimize, export, enrich, stream, market
 from app.services.enrichment import close_service
+from app.services.market_data import close_market_data_service
 
 # =============================================================================
 # LOGGING CONFIGURATIE
@@ -75,6 +76,7 @@ async def lifespan(app: FastAPI):
     # === SHUTDOWN ===
     # Sluit alle externe API clients netjes af
     await close_service()
+    await close_market_data_service()
     logger.info("Shutting down Battery Optimizer API")
 
 
@@ -143,6 +145,9 @@ def create_app() -> FastAPI:
 
     # Stream: Real-time SSE progress updates
     app.include_router(stream.router, prefix="/api/v1", tags=["Streaming"])
+
+    # Market: Marktdata endpoints (ENTSO-E, TenneT, FCR, aFRR, GOPACS)
+    app.include_router(market.router, prefix="/api/v1/market", tags=["Market Data"])
 
     # -------------------------------------------------------------------------
     # BASIS ENDPOINTS

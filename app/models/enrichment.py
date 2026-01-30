@@ -152,6 +152,13 @@ class EnrichmentResultaat(BaseModel):
     commodity_prijzen: MarktPrijzen
     onbalans_prijzen: Optional[OnbalansPrijzen] = None
 
+    # Ancillary services (FCR/aFRR) - optional
+    fcr_prijzen: Optional["FCRPrijzen"] = None
+    afrr_prijzen: Optional["AFRRPrijzen"] = None
+
+    # Congestiemanagement
+    gopacs_data: Optional["GOPACSData"] = None
+
     # Belasting
     energie_belasting: EnergieBelasting
 
@@ -165,6 +172,94 @@ class EnrichmentResultaat(BaseModel):
     data_compleetheid: float  # 0-1
     warnings: List[str] = []
     bronnen: List[str] = []
+
+
+class FCRPrijzen(BaseModel):
+    """FCR (Frequency Containment Reserve) marktprijzen."""
+    bron: str = "TenneT FCR"
+
+    # Capaciteitsprijs (€/MW/uur)
+    gem_capaciteit_eur_mw_hour: float
+    min_capaciteit_eur_mw_hour: float
+    max_capaciteit_eur_mw_hour: float
+
+    # Auction results
+    laatste_veiling_datum: Optional[datetime] = None
+    laatste_veiling_prijs: Optional[float] = None
+
+    # Gemiddelde beschikbaarheid vereist
+    availability_requirement: float = 0.97
+
+    # Historische data
+    prijzen_per_dag: Optional[List[Dict]] = None
+
+
+class AFRRPrijzen(BaseModel):
+    """aFRR (automatic Frequency Restoration Reserve) marktprijzen."""
+    bron: str = "TenneT aFRR"
+
+    # Capaciteitsprijs (€/MW/uur)
+    gem_capaciteit_eur_mw_hour: float
+    min_capaciteit_eur_mw_hour: float
+    max_capaciteit_eur_mw_hour: float
+
+    # Energievergoeding bij activatie (€/MWh)
+    gem_energie_eur_mwh: float
+    max_energie_eur_mwh: float
+
+    # Activatiekans (% van beschikbare uren)
+    activatie_kans: float = 0.15
+    gem_activatie_duur_min: float = 15.0
+
+    # Historische data
+    prijzen_per_dag: Optional[List[Dict]] = None
+
+
+class GOPACSData(BaseModel):
+    """GOPACS congestiemanagement marktdata."""
+    bron: str = "GOPACS"
+
+    # Congestietarief (€/kWh tijdens event)
+    gem_tarief_eur_kwh: float
+    min_tarief_eur_kwh: float
+    max_tarief_eur_kwh: float
+
+    # Verwachte events
+    verwachte_uren_per_jaar: float
+    actuele_uren_ytd: Optional[float] = None
+
+    # Regio-specifiek
+    regio: Optional[str] = None
+    regio_factor: float = 1.0
+
+    # Minimum vermogen voor deelname
+    minimum_vermogen_kw: float = 100.0
+
+    # Recent events
+    recente_events: Optional[List[Dict]] = None
+
+
+class MarketDataSummary(BaseModel):
+    """Samenvatting van alle marktdata voor revenue stream berekeningen."""
+    timestamp: datetime
+
+    # Day-ahead prijzen
+    day_ahead: MarktPrijzen
+
+    # Onbalans
+    onbalans: Optional[OnbalansPrijzen] = None
+
+    # Ancillary services
+    fcr: Optional[FCRPrijzen] = None
+    afrr: Optional[AFRRPrijzen] = None
+
+    # Congestiemanagement
+    gopacs: Optional[GOPACSData] = None
+
+    # Data kwaliteit
+    data_compleetheid: float = 1.0
+    bronnen: List[str] = []
+    warnings: List[str] = []
 
 
 class EnrichmentRequest(BaseModel):
