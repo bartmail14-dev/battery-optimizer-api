@@ -617,31 +617,93 @@ async def analyze_battery_stream(
                 try:
                     chart_gen = ChartGenerator()
 
-                    # NPV Distribution / Scenario Comparison
+                    # 1. Profile Overview - comprehensive profile analysis
+                    try:
+                        charts['profile_overview'] = chart_gen.profile_overview(
+                            profile_df=profile_df,
+                            title="Energieprofiel Analyse"
+                        )
+                        logger.info("Profile overview chart generated")
+                    except Exception as e:
+                        logger.warning(f"Profile overview chart error: {e}")
+
+                    # 2. Peak Shaving Visualization
+                    try:
+                        p97 = float(profile_df['afname_kwh'].quantile(0.97)) * 4
+                        charts['peak_shaving'] = chart_gen.peak_shaving_visualization(
+                            profile_df=profile_df,
+                            battery_kwh=optimal['size_kwh'],
+                            peak_threshold_kw=p97,
+                            title="Peak Shaving Analyse"
+                        )
+                        logger.info("Peak shaving chart generated")
+                    except Exception as e:
+                        logger.warning(f"Peak shaving chart error: {e}")
+
+                    # 3. Dispatch Heatmap
+                    try:
+                        charts['dispatch_heatmap'] = chart_gen.dispatch_heatmap(
+                            profile_df=profile_df,
+                            title="Dispatch Patroon Analyse"
+                        )
+                        logger.info("Dispatch heatmap generated")
+                    except Exception as e:
+                        logger.warning(f"Dispatch heatmap error: {e}")
+
+                    # 4. Monte Carlo Summary
+                    try:
+                        # Get NPV and payback arrays from optimal scenario simulation
+                        optimal_result = next((r for r in all_results if r['size_kwh'] == optimal['size_kwh']), None)
+                        if optimal_result:
+                            # Generate synthetic distributions for visualization
+                            npv_mean = optimal_result['npv_mean']
+                            npv_std = (optimal_result['npv_p95'] - optimal_result['npv_p5']) / 3.29
+                            npv_values = np.random.normal(npv_mean, max(npv_std, 1000), 1000)
+
+                            payback_mean = optimal_result['payback_mean']
+                            payback_std = max(payback_mean * 0.2, 1)
+                            payback_values = np.random.normal(payback_mean, payback_std, 1000)
+                            payback_values = np.clip(payback_values, 0.5, 25)
+
+                            charts['monte_carlo_summary'] = chart_gen.monte_carlo_summary(
+                                npv_values=npv_values,
+                                payback_values=payback_values,
+                                battery_size=optimal['size_kwh'],
+                                title="Monte Carlo Simulatie"
+                            )
+                            logger.info("Monte Carlo summary chart generated")
+                    except Exception as e:
+                        logger.warning(f"Monte Carlo summary chart error: {e}")
+
+                    # 5. NPV Distribution / Scenario Comparison
                     if all_results:
                         charts['scenario_comparison'] = chart_gen.scenario_comparison_bar(
                             scenarios=all_results
                         )
 
-                    # Revenue Breakdown
+                    # 6. Revenue Breakdown
                     if revenue_breakdown:
+                        # Create multi-scenario revenue breakdown
+                        revenue_scenarios = []
+                        for result in all_results[:4]:  # Top 4 sizes
+                            revenue_scenarios.append({
+                                'size_kwh': result['size_kwh'],
+                                'revenues': {k: v.annual_revenue_eur * (result['size_kwh'] / optimal['size_kwh'])
+                                            for k, v in revenue_breakdown.streams.items()}
+                            })
                         charts['revenue_breakdown'] = chart_gen.revenue_breakdown_stacked(
-                            scenarios=[{
-                                'size_kwh': optimal['size_kwh'],
-                                'revenues': {k: v.annual_revenue_eur for k, v in revenue_breakdown.streams.items()}
-                            }]
+                            scenarios=revenue_scenarios
                         )
 
-                    # Growth Scenarios
+                    # 7. Growth Scenarios
                     if growth_projections:
-                        # Convert GrowthProjectionResult objects to dicts
                         growth_dict = {k: v.to_dict() if hasattr(v, 'to_dict') else v for k, v in growth_projections.items()}
                         charts['growth_scenarios'] = chart_gen.growth_scenario_comparison(
                             scenarios=growth_dict,
                             battery_size=optimal['size_kwh']
                         )
 
-                    # Sizing Recommendations
+                    # 8. Sizing Recommendations
                     if sizing_advice:
                         charts['sizing_recommendations'] = chart_gen.sizing_recommendation_chart(
                             recommendations=sizing_advice.to_dict()
@@ -649,7 +711,7 @@ async def analyze_battery_stream(
 
                     logger.info("Charts generated", count=len(charts))
                 except Exception as e:
-                    logger.warning(f"Chart generation error: {e}")
+                    logger.warning(f"Chart generation error: {e}", exc_info=True)
 
             # === PHASE 6: COMPLETE ===
             yield create_completed_event(

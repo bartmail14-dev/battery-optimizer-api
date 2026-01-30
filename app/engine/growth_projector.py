@@ -300,7 +300,13 @@ class GrowthProjector:
             }
 
         interval_hours = 0.25
-        afname = df['afname'].fillna(0)
+        # Support both 'afname' and 'afname_kwh' column names
+        if 'afname_kwh' in df.columns:
+            afname = df['afname_kwh'].fillna(0)
+        elif 'afname' in df.columns:
+            afname = df['afname'].fillna(0)
+        else:
+            raise ValueError(f"No 'afname' or 'afname_kwh' column found. Columns: {list(df.columns)}")
 
         # Explicitly convert to float to avoid pandas Series issues
         total_kwh = float(afname.sum())
@@ -383,13 +389,16 @@ class GrowthProjector:
         """
         df = profile_df.copy()
 
+        # Determine column name (support both 'afname' and 'afname_kwh')
+        afname_col = 'afname_kwh' if 'afname_kwh' in df.columns else 'afname'
+
         # Basis schaling
-        df['afname'] = df['afname'] * consumption_factor
+        df[afname_col] = df[afname_col] * consumption_factor
 
         # Peakiness aanpassing
         if peakiness_factor != 1.0:
-            mean_afname = df['afname'].mean()
-            df['afname'] = mean_afname + (df['afname'] - mean_afname) * peakiness_factor
+            mean_afname = df[afname_col].mean()
+            df[afname_col] = mean_afname + (df[afname_col] - mean_afname) * peakiness_factor
 
         # Evening shift (verschuif naar 17:00-22:00)
         if evening_shift > 1.0 and 'timestamp' in df.columns:
@@ -398,16 +407,16 @@ class GrowthProjector:
             shift_amount = (evening_shift - 1) * 0.1  # 10% verschuiving per factor
 
             # Verhoog avond, verlaag rest
-            df.loc[evening_mask, 'afname'] *= (1 + shift_amount)
-            df.loc[~evening_mask, 'afname'] *= (1 - shift_amount * 0.5)
+            df.loc[evening_mask, afname_col] *= (1 + shift_amount)
+            df.loc[~evening_mask, afname_col] *= (1 - shift_amount * 0.5)
 
         # Normaliseer zodat totaal klopt
-        current_total = df['afname'].sum()
-        target_total = profile_df['afname'].sum() * consumption_factor
-        df['afname'] *= target_total / current_total if current_total > 0 else 1
+        current_total = df[afname_col].sum()
+        target_total = profile_df[afname_col].sum() * consumption_factor
+        df[afname_col] *= target_total / current_total if current_total > 0 else 1
 
         # Teruglevering (PV) groeit mee met eventuele uitbreiding
-        if 'teruglevering' in df.columns:
+        if 'teruglevering' in df.columns or 'teruglevering_kwh' in df.columns:
             # Aanname: PV groeit niet automatisch, alleen met expliciete uitbreiding
             # Hier houden we het gelijk (factor 1.0)
             pass

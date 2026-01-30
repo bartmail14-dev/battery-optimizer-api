@@ -624,3 +624,472 @@ class ChartGenerator:
         ax.set_xlim(0, sample_size)
 
         return self._fig_to_base64(fig)
+
+    def profile_overview(
+        self,
+        profile_df,
+        title: str = "Energieprofiel Overzicht"
+    ) -> str:
+        """
+        Generate comprehensive profile overview with multiple subplots.
+
+        Shows: daily pattern, weekly pattern, load duration curve, and peak analysis.
+        """
+        import pandas as pd
+
+        fig = plt.figure(figsize=(16, 12))
+
+        # Get data
+        if 'afname_kwh' in profile_df.columns:
+            load_kwh = profile_df['afname_kwh'].values
+        else:
+            load_kwh = profile_df['afname'].values
+
+        load_kw = load_kwh * 4  # Convert to kW
+
+        # Timestamps
+        if 'timestamp' in profile_df.columns:
+            timestamps = pd.to_datetime(profile_df['timestamp'])
+            hours = timestamps.dt.hour + timestamps.dt.minute / 60
+            weekdays = timestamps.dt.dayofweek
+        else:
+            hours = np.tile(np.repeat(np.arange(24), 4), len(load_kw) // 96 + 1)[:len(load_kw)]
+            weekdays = np.tile(np.repeat(np.arange(7), 96), len(load_kw) // (7*96) + 1)[:len(load_kw)]
+
+        # 1. Load Duration Curve (top left)
+        ax1 = fig.add_subplot(2, 2, 1)
+        sorted_load = np.sort(load_kw)[::-1]
+        duration_percent = np.arange(len(sorted_load)) / len(sorted_load) * 100
+
+        ax1.fill_between(duration_percent, sorted_load, alpha=0.3, color=self.colors['primary'])
+        ax1.plot(duration_percent, sorted_load, color=self.colors['primary'], linewidth=2)
+
+        # Add percentile markers
+        for pct in [90, 95, 99]:
+            val = np.percentile(load_kw, pct)
+            idx = np.searchsorted(sorted_load[::-1], val)
+            ax1.axhline(y=val, color=self.colors['warning'], linestyle='--', alpha=0.7)
+            ax1.annotate(f'P{pct}: {val:.0f} kW', xy=(100-pct, val), fontsize=9)
+
+        ax1.axhline(y=np.max(load_kw), color=self.colors['danger'], linestyle='-', linewidth=2)
+        ax1.annotate(f'MAX: {np.max(load_kw):.0f} kW', xy=(0, np.max(load_kw)*1.02), fontsize=10, fontweight='bold')
+
+        ax1.set_xlabel('Percentage van de tijd (%)')
+        ax1.set_ylabel('Vermogen (kW)')
+        ax1.set_title('Load Duration Curve', fontweight='bold')
+        ax1.grid(True, alpha=0.3)
+        ax1.set_xlim(0, 100)
+
+        # 2. Daily Pattern (top right)
+        ax2 = fig.add_subplot(2, 2, 2)
+
+        # Group by hour
+        hour_bins = np.floor(hours).astype(int)
+        hourly_mean = np.array([load_kw[hour_bins == h].mean() for h in range(24)])
+        hourly_max = np.array([load_kw[hour_bins == h].max() for h in range(24)])
+        hourly_min = np.array([load_kw[hour_bins == h].min() for h in range(24)])
+        hourly_p75 = np.array([np.percentile(load_kw[hour_bins == h], 75) for h in range(24)])
+        hourly_p25 = np.array([np.percentile(load_kw[hour_bins == h], 25) for h in range(24)])
+
+        x_hours = np.arange(24)
+        ax2.fill_between(x_hours, hourly_min, hourly_max, alpha=0.1, color=self.colors['primary'], label='Min-Max')
+        ax2.fill_between(x_hours, hourly_p25, hourly_p75, alpha=0.3, color=self.colors['primary'], label='P25-P75')
+        ax2.plot(x_hours, hourly_mean, color=self.colors['primary'], linewidth=2.5, label='Gemiddeld')
+
+        ax2.set_xlabel('Uur van de dag')
+        ax2.set_ylabel('Vermogen (kW)')
+        ax2.set_title('Dagelijks Patroon', fontweight='bold')
+        ax2.legend(loc='upper right')
+        ax2.grid(True, alpha=0.3)
+        ax2.set_xlim(0, 23)
+        ax2.set_xticks(range(0, 24, 3))
+
+        # 3. Weekly Pattern (bottom left)
+        ax3 = fig.add_subplot(2, 2, 3)
+
+        day_names = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo']
+        daily_mean = np.array([load_kw[weekdays == d].mean() for d in range(7)])
+        daily_max = np.array([load_kw[weekdays == d].max() for d in range(7)])
+        daily_p95 = np.array([np.percentile(load_kw[weekdays == d], 95) for d in range(7)])
+
+        x_days = np.arange(7)
+        width = 0.25
+        ax3.bar(x_days - width, daily_mean, width, label='Gemiddeld', color=self.colors['primary'], alpha=0.8)
+        ax3.bar(x_days, daily_p95, width, label='P95', color=self.colors['warning'], alpha=0.8)
+        ax3.bar(x_days + width, daily_max, width, label='Maximum', color=self.colors['danger'], alpha=0.8)
+
+        ax3.set_xlabel('Dag van de week')
+        ax3.set_ylabel('Vermogen (kW)')
+        ax3.set_title('Wekelijks Patroon', fontweight='bold')
+        ax3.set_xticks(x_days)
+        ax3.set_xticklabels(day_names)
+        ax3.legend(loc='upper right')
+        ax3.grid(True, alpha=0.3, axis='y')
+
+        # 4. Peak Analysis Histogram (bottom right)
+        ax4 = fig.add_subplot(2, 2, 4)
+
+        # Create histogram
+        n, bins, patches = ax4.hist(load_kw, bins=50, density=False, alpha=0.7,
+                                     color=self.colors['primary'], edgecolor='white')
+
+        # Color bins above P95 and P99
+        p95 = np.percentile(load_kw, 95)
+        p99 = np.percentile(load_kw, 99)
+        for patch, left_edge in zip(patches, bins[:-1]):
+            if left_edge >= p99:
+                patch.set_facecolor(self.colors['danger'])
+            elif left_edge >= p95:
+                patch.set_facecolor(self.colors['warning'])
+
+        ax4.axvline(p95, color=self.colors['warning'], linestyle='--', linewidth=2, label=f'P95: {p95:.0f} kW')
+        ax4.axvline(p99, color=self.colors['danger'], linestyle='--', linewidth=2, label=f'P99: {p99:.0f} kW')
+        ax4.axvline(np.max(load_kw), color='black', linestyle='-', linewidth=2, label=f'MAX: {np.max(load_kw):.0f} kW')
+
+        ax4.set_xlabel('Vermogen (kW)')
+        ax4.set_ylabel('Frequentie')
+        ax4.set_title('Vermogensdistributie & Piekanalyse', fontweight='bold')
+        ax4.legend(loc='upper right')
+        ax4.grid(True, alpha=0.3, axis='y')
+
+        # Add summary stats
+        stats_text = f'Statistieken:\n'
+        stats_text += f'Gem: {np.mean(load_kw):.0f} kW\n'
+        stats_text += f'Std: {np.std(load_kw):.0f} kW\n'
+        stats_text += f'Jaarverbruik: {np.sum(load_kwh)/1000:.0f} MWh'
+        ax4.text(0.02, 0.98, stats_text, transform=ax4.transAxes, fontsize=9,
+                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
+
+        plt.suptitle(title, fontsize=16, fontweight='bold', y=1.02)
+        plt.tight_layout()
+
+        return self._fig_to_base64(fig)
+
+    def peak_shaving_visualization(
+        self,
+        profile_df,
+        battery_kwh: float,
+        peak_threshold_kw: float,
+        title: str = "Peak Shaving Analyse"
+    ) -> str:
+        """
+        Visualize peak shaving potential with before/after comparison.
+        """
+        import pandas as pd
+
+        fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+
+        # Get data
+        if 'afname_kwh' in profile_df.columns:
+            load_kwh = profile_df['afname_kwh'].values
+        else:
+            load_kwh = profile_df['afname'].values
+        load_kw = load_kwh * 4
+
+        # Simulate simple peak shaving
+        battery_power_kw = battery_kwh  # 1C rate
+        new_load_kw = load_kw.copy()
+        battery_soc = np.zeros(len(load_kw))
+        dispatch_actions = np.zeros(len(load_kw))
+
+        soc = battery_kwh * 0.5  # Start at 50%
+        for i in range(len(load_kw)):
+            if load_kw[i] > peak_threshold_kw:
+                # Discharge to shave peak
+                needed_kw = load_kw[i] - peak_threshold_kw
+                discharge_kw = min(needed_kw, battery_power_kw, soc * 4)
+                new_load_kw[i] = load_kw[i] - discharge_kw
+                soc -= discharge_kw * 0.25
+                dispatch_actions[i] = -discharge_kw
+            elif load_kw[i] < peak_threshold_kw * 0.7:
+                # Charge during low load
+                headroom_kw = peak_threshold_kw * 0.7 - load_kw[i]
+                charge_kw = min(headroom_kw, battery_power_kw, (battery_kwh - soc) * 4)
+                soc += charge_kw * 0.25 * 0.95
+                dispatch_actions[i] = charge_kw
+            battery_soc[i] = soc
+
+        # 1. Week view - Original vs Shaved (top left)
+        ax1 = axes[0, 0]
+        week_samples = min(7 * 96, len(load_kw))
+        x = np.arange(week_samples) / 96  # Days
+
+        ax1.fill_between(x, load_kw[:week_samples], alpha=0.3, color=self.colors['danger'], label='Origineel')
+        ax1.fill_between(x, new_load_kw[:week_samples], alpha=0.5, color=self.colors['success'], label='Na peak shaving')
+        ax1.axhline(peak_threshold_kw, color=self.colors['warning'], linestyle='--', linewidth=2,
+                   label=f'Drempel: {peak_threshold_kw:.0f} kW')
+
+        ax1.set_xlabel('Dagen')
+        ax1.set_ylabel('Vermogen (kW)')
+        ax1.set_title('Week Vermogensprofiel', fontweight='bold')
+        ax1.legend(loc='upper right')
+        ax1.grid(True, alpha=0.3)
+
+        # 2. Battery SOC and Dispatch (top right)
+        ax2 = axes[0, 1]
+        ax2_twin = ax2.twinx()
+
+        ax2.fill_between(x, battery_soc[:week_samples], alpha=0.3, color=self.colors['secondary'])
+        ax2.plot(x, battery_soc[:week_samples], color=self.colors['secondary'], linewidth=2, label='SOC (kWh)')
+        ax2.set_ylabel('Batterij SOC (kWh)', color=self.colors['secondary'])
+        ax2.set_ylim(0, battery_kwh * 1.1)
+
+        # Dispatch actions
+        charge_mask = dispatch_actions[:week_samples] > 0
+        discharge_mask = dispatch_actions[:week_samples] < 0
+        ax2_twin.bar(x[charge_mask], dispatch_actions[:week_samples][charge_mask],
+                    width=1/96, color=self.colors['success'], alpha=0.6, label='Laden')
+        ax2_twin.bar(x[discharge_mask], dispatch_actions[:week_samples][discharge_mask],
+                    width=1/96, color=self.colors['danger'], alpha=0.6, label='Ontladen')
+        ax2_twin.set_ylabel('Dispatch (kW)')
+        ax2_twin.legend(loc='upper right')
+
+        ax2.set_xlabel('Dagen')
+        ax2.set_title('Batterij Status & Dispatch', fontweight='bold')
+        ax2.grid(True, alpha=0.3)
+
+        # 3. Peak Reduction Summary (bottom left)
+        ax3 = axes[1, 0]
+
+        original_peak = np.max(load_kw)
+        new_peak = np.max(new_load_kw)
+        reduction = original_peak - new_peak
+        reduction_pct = (reduction / original_peak) * 100
+
+        categories = ['Originele\nPiek', 'Nieuwe\nPiek', 'Reductie']
+        values = [original_peak, new_peak, reduction]
+        colors = [self.colors['danger'], self.colors['success'], self.colors['secondary']]
+
+        bars = ax3.bar(categories, values, color=colors, alpha=0.85)
+
+        for bar, val in zip(bars, values):
+            ax3.annotate(f'{val:.0f} kW', xy=(bar.get_x() + bar.get_width()/2, bar.get_height()),
+                        xytext=(0, 5), textcoords='offset points', ha='center', fontsize=12, fontweight='bold')
+
+        ax3.set_ylabel('Vermogen (kW)')
+        ax3.set_title(f'Piekreductie: {reduction:.0f} kW ({reduction_pct:.1f}%)', fontweight='bold')
+        ax3.grid(True, alpha=0.3, axis='y')
+
+        # 4. Monthly Cost Savings (bottom right)
+        ax4 = axes[1, 1]
+
+        # Calculate monthly peaks
+        n_months = min(12, len(load_kw) // (30 * 96))
+        monthly_original = []
+        monthly_new = []
+
+        for m in range(n_months):
+            start = m * 30 * 96
+            end = min((m + 1) * 30 * 96, len(load_kw))
+            monthly_original.append(np.max(load_kw[start:end]))
+            monthly_new.append(np.max(new_load_kw[start:end]))
+
+        x_months = np.arange(n_months)
+        width = 0.35
+        ax4.bar(x_months - width/2, monthly_original, width, label='Origineel', color=self.colors['danger'], alpha=0.8)
+        ax4.bar(x_months + width/2, monthly_new, width, label='Na peak shaving', color=self.colors['success'], alpha=0.8)
+
+        ax4.set_xlabel('Maand')
+        ax4.set_ylabel('Maandpiek (kW)')
+        ax4.set_title('Maandelijkse Piekvermogen', fontweight='bold')
+        ax4.set_xticks(x_months)
+        ax4.set_xticklabels([f'M{i+1}' for i in range(n_months)])
+        ax4.legend(loc='upper right')
+        ax4.grid(True, alpha=0.3, axis='y')
+
+        # Add savings annotation
+        capacity_tariff = 5.20  # €/kW/month
+        monthly_savings = np.array(monthly_original) - np.array(monthly_new)
+        total_savings = np.sum(monthly_savings) * capacity_tariff
+        ax4.text(0.02, 0.98, f'Jaarlijkse besparing:\n€{total_savings:,.0f}',
+                transform=ax4.transAxes, fontsize=11, fontweight='bold',
+                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
+
+        plt.suptitle(f'{title} - {battery_kwh} kWh Batterij', fontsize=16, fontweight='bold', y=1.02)
+        plt.tight_layout()
+
+        return self._fig_to_base64(fig)
+
+    def dispatch_heatmap(
+        self,
+        profile_df,
+        dispatch_actions: Optional[np.ndarray] = None,
+        title: str = "Dispatch Heatmap"
+    ) -> str:
+        """
+        Create heatmap showing battery dispatch patterns by hour and day.
+        """
+        import pandas as pd
+
+        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+        # Get data
+        if 'afname_kwh' in profile_df.columns:
+            load_kwh = profile_df['afname_kwh'].values
+        else:
+            load_kwh = profile_df['afname'].values
+        load_kw = load_kwh * 4
+
+        if 'timestamp' in profile_df.columns:
+            timestamps = pd.to_datetime(profile_df['timestamp'])
+            hours = timestamps.dt.hour
+            weekdays = timestamps.dt.dayofweek
+        else:
+            hours = np.tile(np.repeat(np.arange(24), 4), len(load_kw) // 96 + 1)[:len(load_kw)]
+            weekdays = np.tile(np.repeat(np.arange(7), 96), len(load_kw) // (7*96) + 1)[:len(load_kw)]
+
+        # Create load heatmap (24 hours x 7 days)
+        load_matrix = np.zeros((24, 7))
+        count_matrix = np.zeros((24, 7))
+
+        for i in range(len(load_kw)):
+            h = int(hours.iloc[i] if hasattr(hours, 'iloc') else hours[i])
+            d = int(weekdays.iloc[i] if hasattr(weekdays, 'iloc') else weekdays[i])
+            load_matrix[h, d] += load_kw[i]
+            count_matrix[h, d] += 1
+
+        load_matrix = np.divide(load_matrix, count_matrix, where=count_matrix > 0)
+
+        # Plot load heatmap
+        im1 = axes[0].imshow(load_matrix, cmap='YlOrRd', aspect='auto', origin='lower')
+        axes[0].set_xlabel('Dag van de week')
+        axes[0].set_ylabel('Uur van de dag')
+        axes[0].set_title('Gemiddeld Vermogen (kW)', fontweight='bold')
+        axes[0].set_xticks(range(7))
+        axes[0].set_xticklabels(['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'])
+        axes[0].set_yticks(range(0, 24, 3))
+        plt.colorbar(im1, ax=axes[0], label='kW')
+
+        # Create peak frequency heatmap
+        p95 = np.percentile(load_kw, 95)
+        peak_matrix = np.zeros((24, 7))
+
+        for i in range(len(load_kw)):
+            h = int(hours.iloc[i] if hasattr(hours, 'iloc') else hours[i])
+            d = int(weekdays.iloc[i] if hasattr(weekdays, 'iloc') else weekdays[i])
+            if load_kw[i] >= p95:
+                peak_matrix[h, d] += 1
+
+        # Normalize by total weeks
+        n_weeks = len(load_kw) / (7 * 96)
+        peak_matrix = peak_matrix / n_weeks
+
+        im2 = axes[1].imshow(peak_matrix, cmap='Reds', aspect='auto', origin='lower')
+        axes[1].set_xlabel('Dag van de week')
+        axes[1].set_ylabel('Uur van de dag')
+        axes[1].set_title(f'Piekfrequentie (>P95: {p95:.0f} kW)', fontweight='bold')
+        axes[1].set_xticks(range(7))
+        axes[1].set_xticklabels(['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'])
+        axes[1].set_yticks(range(0, 24, 3))
+        plt.colorbar(im2, ax=axes[1], label='Pieken per week')
+
+        plt.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
+        plt.tight_layout()
+
+        return self._fig_to_base64(fig)
+
+    def monte_carlo_summary(
+        self,
+        npv_values: np.ndarray,
+        payback_values: np.ndarray,
+        battery_size: float,
+        title: str = "Monte Carlo Simulatie Samenvatting"
+    ) -> str:
+        """
+        Comprehensive Monte Carlo results visualization.
+        """
+        fig = plt.figure(figsize=(16, 10))
+
+        # 1. NPV Distribution (top left)
+        ax1 = fig.add_subplot(2, 2, 1)
+        n, bins, patches = ax1.hist(npv_values, bins=50, density=True, alpha=0.7,
+                                     color=self.colors['primary'], edgecolor='white')
+
+        for patch, left_edge in zip(patches, bins[:-1]):
+            if left_edge < 0:
+                patch.set_facecolor(self.colors['danger'])
+
+        mean_npv = np.mean(npv_values)
+        ax1.axvline(mean_npv, color=self.colors['success'], linestyle='-', linewidth=2)
+        ax1.axvline(0, color='black', linestyle='-', linewidth=1)
+
+        prob_positive = np.mean(npv_values > 0) * 100
+        ax1.set_title(f'NPV Distributie - {prob_positive:.0f}% kans positief', fontweight='bold')
+        ax1.set_xlabel('NPV (€)')
+        ax1.set_ylabel('Dichtheid')
+        ax1.xaxis.set_major_formatter(FuncFormatter(self._format_currency))
+        ax1.grid(True, alpha=0.3, axis='y')
+
+        # 2. Payback Distribution (top right)
+        ax2 = fig.add_subplot(2, 2, 2)
+
+        # Filter out very long paybacks for better visualization
+        valid_payback = payback_values[payback_values < 25]
+        ax2.hist(valid_payback, bins=40, density=True, alpha=0.7,
+                color=self.colors['secondary'], edgecolor='white')
+
+        ax2.axvline(np.median(valid_payback), color=self.colors['success'], linestyle='-', linewidth=2,
+                   label=f'Mediaan: {np.median(valid_payback):.1f} jaar')
+        ax2.axvline(10, color=self.colors['warning'], linestyle='--', linewidth=2, label='Benchmark: 10 jaar')
+
+        prob_10y = np.mean(payback_values <= 10) * 100
+        ax2.set_title(f'Terugverdientijd - {prob_10y:.0f}% binnen 10 jaar', fontweight='bold')
+        ax2.set_xlabel('Terugverdientijd (jaren)')
+        ax2.set_ylabel('Dichtheid')
+        ax2.legend(loc='upper right')
+        ax2.grid(True, alpha=0.3, axis='y')
+
+        # 3. Cumulative NPV over time (bottom left) - simulate
+        ax3 = fig.add_subplot(2, 2, 3)
+
+        # Generate cumulative cashflow percentiles
+        years = np.arange(16)
+        annual_savings = mean_npv / 15  # Rough estimate
+        capex = battery_size * 600  # €600/kWh estimate
+
+        p50_cumulative = -capex + annual_savings * years
+        p5_cumulative = p50_cumulative * 0.7
+        p95_cumulative = p50_cumulative * 1.3
+
+        ax3.fill_between(years, p5_cumulative, p95_cumulative, alpha=0.2, color=self.colors['primary'])
+        ax3.plot(years, p50_cumulative, color=self.colors['primary'], linewidth=2.5)
+        ax3.axhline(0, color='black', linestyle='--', linewidth=1)
+
+        ax3.set_xlabel('Jaren')
+        ax3.set_ylabel('Cumulatieve Cashflow')
+        ax3.set_title('Cumulatieve Cashflow met Onzekerheidsband', fontweight='bold')
+        ax3.yaxis.set_major_formatter(FuncFormatter(self._format_currency))
+        ax3.grid(True, alpha=0.3)
+
+        # 4. Risk Metrics (bottom right)
+        ax4 = fig.add_subplot(2, 2, 4)
+
+        # Calculate risk metrics
+        var_5 = np.percentile(npv_values, 5)
+        cvar_5 = np.mean(npv_values[npv_values <= var_5])
+        std_npv = np.std(npv_values)
+
+        metrics = ['Gem. NPV', 'Mediaan NPV', 'Std. Dev.', 'VaR (5%)', 'CVaR (5%)']
+        values = [mean_npv, np.median(npv_values), std_npv, var_5, cvar_5]
+        colors_risk = [self.colors['success'], self.colors['success'], self.colors['gray'],
+                       self.colors['warning'], self.colors['danger']]
+
+        y_pos = np.arange(len(metrics))
+        bars = ax4.barh(y_pos, values, color=colors_risk, alpha=0.8)
+
+        ax4.set_yticks(y_pos)
+        ax4.set_yticklabels(metrics)
+        ax4.axvline(0, color='black', linestyle='-', linewidth=1)
+        ax4.set_title('Risicometrieken', fontweight='bold')
+        ax4.xaxis.set_major_formatter(FuncFormatter(self._format_currency))
+        ax4.grid(True, alpha=0.3, axis='x')
+
+        # Add value labels
+        for bar, val in zip(bars, values):
+            ax4.annotate(self._format_currency(val), xy=(bar.get_width(), bar.get_y() + bar.get_height()/2),
+                        xytext=(5, 0), textcoords='offset points', va='center', fontsize=10)
+
+        plt.suptitle(f'{title} - {battery_size} kWh Batterij', fontsize=16, fontweight='bold', y=1.02)
+        plt.tight_layout()
+
+        return self._fig_to_base64(fig)
