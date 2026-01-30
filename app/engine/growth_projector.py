@@ -302,11 +302,12 @@ class GrowthProjector:
         interval_hours = 0.25
         afname = df['afname'].fillna(0)
 
-        total_kwh = afname.sum()
+        # Explicitly convert to float to avoid pandas Series issues
+        total_kwh = float(afname.sum())
         days = len(df) / 96
         annual_kwh = (total_kwh / days) * 365 if days > 0 else 0
 
-        peak_kw = afname.max() / interval_hours
+        peak_kw = float(afname.max()) / interval_hours
 
         return {
             "total_consumption_kwh": total_kwh,

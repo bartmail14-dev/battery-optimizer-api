@@ -180,10 +180,13 @@ async def analyze_battery_stream(
             profile_df = df_normalized.copy()
             profile_df['timestamp'] = pd.to_datetime(profile_df['timestamp'])
             profile_df['afname_kwh'] = pd.to_numeric(profile_df['afname_kwh'], errors='coerce').fillna(0)
-            profile_df['teruglevering_kwh'] = pd.to_numeric(
-                profile_df.get('teruglevering_kwh', 0),
-                errors='coerce'
-            ).fillna(0)
+            if 'teruglevering_kwh' in profile_df.columns:
+                profile_df['teruglevering_kwh'] = pd.to_numeric(
+                    profile_df['teruglevering_kwh'],
+                    errors='coerce'
+                ).fillna(0)
+            else:
+                profile_df['teruglevering_kwh'] = 0
 
             # Profile analysis
             analysis = analyze_profile(df_normalized)
@@ -753,10 +756,13 @@ async def analyze_battery_stream_from_session(
             # Prepare profile
             profile_df['timestamp'] = pd.to_datetime(profile_df['timestamp'])
             profile_df['afname_kwh'] = pd.to_numeric(profile_df['afname_kwh'], errors='coerce').fillna(0)
-            profile_df['teruglevering_kwh'] = pd.to_numeric(
-                profile_df.get('teruglevering_kwh', 0),
-                errors='coerce'
-            ).fillna(0)
+            if 'teruglevering_kwh' in profile_df.columns:
+                profile_df['teruglevering_kwh'] = pd.to_numeric(
+                    profile_df['teruglevering_kwh'],
+                    errors='coerce'
+                ).fillna(0)
+            else:
+                profile_df['teruglevering_kwh'] = 0
 
             yield create_phase_event(
                 phase="profile_loading",

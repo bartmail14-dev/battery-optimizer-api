@@ -266,12 +266,13 @@ class SizingAdvisor:
         afname_col = 'afname_kwh' if 'afname_kwh' in df.columns else 'afname'
         afname = df[afname_col].fillna(0)
 
-        peak_kw = afname.max() / interval_hours
-        avg_kw = afname.mean() / interval_hours
-        baseload_kw = afname.quantile(0.10) / interval_hours
+        # Explicitly convert to float to avoid pandas Series issues
+        peak_kw = float(afname.max()) / interval_hours
+        avg_kw = float(afname.mean()) / interval_hours
+        baseload_kw = float(afname.quantile(0.10)) / interval_hours
 
         days = len(df) / 96
-        annual_kwh = (afname.sum() / days) * 365 if days > 0 else 0
+        annual_kwh = (float(afname.sum()) / days) * 365 if days > 0 else 0
 
         return {
             "peak_kw": peak_kw,

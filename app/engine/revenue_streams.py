@@ -238,14 +238,17 @@ class RevenueCalculator:
         afname = df[afname_col].fillna(0)
         teruglevering = df[teruglevering_col].fillna(0) if teruglevering_col in df.columns else pd.Series([0] * len(df))
 
+        # Explicitly convert to float to avoid pandas Series issues
+        teruglevering_total = float(teruglevering.sum())
+
         return {
-            "peak_kw": afname.max() / interval_hours,
-            "avg_kw": afname.mean() / interval_hours,
-            "baseload_kw": afname.quantile(0.10) / interval_hours,
-            "total_kwh": afname.sum(),
-            "teruglevering_kwh": teruglevering.sum(),
+            "peak_kw": float(afname.max()) / interval_hours,
+            "avg_kw": float(afname.mean()) / interval_hours,
+            "baseload_kw": float(afname.quantile(0.10)) / interval_hours,
+            "total_kwh": float(afname.sum()),
+            "teruglevering_kwh": teruglevering_total,
             "days": len(df) / 96,  # 96 intervallen per dag
-            "has_solar": teruglevering.sum() > 0,
+            "has_solar": teruglevering_total > 0,
         }
 
     def _calculate_peak_shaving(
