@@ -7,17 +7,19 @@ class Settings(BaseSettings):
 
     # App settings
     app_name: str = "Battery Optimizer API"
-    version: str = "1.0.1"
+    version: str = "1.0.2"
     debug: bool = False
 
     # Server settings
     host: str = "0.0.0.0"
     port: int = 8000
 
-    # CORS
+    # CORS - Production and development origins
     allowed_origins: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://battery-optimizer.vercel.app",
+        "https://battery-optimizer-*.vercel.app",  # Preview deployments
     ]
 
     # File upload
