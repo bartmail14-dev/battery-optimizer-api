@@ -17,6 +17,22 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 import json
 import time
+import numpy as np
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles numpy types."""
+
+    def default(self, obj):
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
 
 
 class ProgressEventType(Enum):
@@ -106,7 +122,7 @@ class ProgressEvent:
         if self.data is not None:
             payload["data"] = self.data
 
-        return f"data: {json.dumps(payload)}\n\n"
+        return f"data: {json.dumps(payload, cls=NumpyEncoder)}\n\n"
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
