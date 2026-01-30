@@ -27,11 +27,67 @@ from .monte_carlo import MonteCarloEngine
 from .simulation import BatteryDispatchSimulator
 from .degradation import DegradationModel, BatteryChemistry
 from .tco import TCOCalculator
+from .progress import ProgressEvent, ProgressEventType
+from .revenue_streams import (
+    RevenueCalculator,
+    RevenueStreamType,
+    RevenueStreamResult,
+    MultiRevenueResult,
+    QualificationStatus,
+)
+from .market_params import (
+    MarketParams,
+    DEFAULT_MARKET_PARAMS,
+    get_capacity_tariff,
+    Netbeheerder,
+)
+from .growth_projector import (
+    GrowthProjector,
+    GrowthScenario,
+    GrowthScenarioType,
+    GrowthProjectionResult,
+    PREDEFINED_SCENARIOS,
+    get_scenario,
+)
+from .sizing_advisor import (
+    SizingAdvisor,
+    SizingTier,
+    SizingRecommendation,
+    SizingRecommendations,
+    BatteryConstraints,
+)
 
 __all__ = [
+    # Monte Carlo & Simulation
     'MonteCarloEngine',
     'BatteryDispatchSimulator',
     'DegradationModel',
     'BatteryChemistry',
     'TCOCalculator',
+    'ProgressEvent',
+    'ProgressEventType',
+    # Revenue Streams
+    'RevenueCalculator',
+    'RevenueStreamType',
+    'RevenueStreamResult',
+    'MultiRevenueResult',
+    'QualificationStatus',
+    # Market Parameters
+    'MarketParams',
+    'DEFAULT_MARKET_PARAMS',
+    'get_capacity_tariff',
+    'Netbeheerder',
+    # Growth Projector
+    'GrowthProjector',
+    'GrowthScenario',
+    'GrowthScenarioType',
+    'GrowthProjectionResult',
+    'PREDEFINED_SCENARIOS',
+    'get_scenario',
+    # Sizing Advisor
+    'SizingAdvisor',
+    'SizingTier',
+    'SizingRecommendation',
+    'SizingRecommendations',
+    'BatteryConstraints',
 ]

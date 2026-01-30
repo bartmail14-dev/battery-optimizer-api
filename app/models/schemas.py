@@ -209,3 +209,184 @@ class OptimizationResult(BaseModel):
     computation_time_seconds: float = 0
     methodology_notes: str = ""
     error: Optional[str] = None
+
+
+# === Revenue Stream Models ===
+
+
+class RevenueStreamType(str, Enum):
+    """Available revenue streams."""
+    PEAK_SHAVING = "peak_shaving"
+    SELF_CONSUMPTION = "self_consumption"
+    ARBITRAGE = "arbitrage"
+    IMBALANCE = "imbalance"
+    GOPACS = "gopacs"
+    FCR = "fcr"
+    AFRR = "afrr"
+
+
+class QualificationStatus(str, Enum):
+    """Qualification status for revenue stream."""
+    QUALIFIED = "qualified"
+    PARTIAL = "partial"
+    NOT_QUALIFIED = "not_qualified"
+
+
+class RevenueStreamResult(BaseModel):
+    """Result of single revenue stream calculation."""
+    stream_type: str
+    annual_revenue_eur: float
+    utilization_hours: float
+    capacity_required_kw: float
+    qualification_status: str
+    confidence_level: float
+    methodology: str
+    assumptions: list[str] = []
+    warnings: list[str] = []
+
+
+class MultiRevenueResult(BaseModel):
+    """Combined revenue stream results."""
+    streams: dict[str, RevenueStreamResult]
+    total_stacked_revenue: float
+    realistic_combined_revenue: float
+    revenue_at_risk: float
+    battery_utilization_percent: float
+    recommended_streams: list[str]
+
+
+# === Growth Scenario Models ===
+
+
+class GrowthScenarioType(str, Enum):
+    """Growth scenario types."""
+    BASELINE = "baseline"
+    MODERATE = "moderate"
+    HIGH = "high"
+    AGGRESSIVE = "aggressive"
+    CUSTOM = "custom"
+
+
+class GrowthScenarioConfig(BaseModel):
+    """Configuration for growth scenario."""
+    scenario_type: GrowthScenarioType = GrowthScenarioType.BASELINE
+    projection_years: int = Field(ge=5, le=20, default=10)
+    custom_consumption_growth: Optional[float] = None
+    custom_peak_growth: Optional[float] = None
+
+
+class ProjectedYear(BaseModel):
+    """Projection for single year."""
+    year: int
+    consumption_kwh: float
+    peak_kw: float
+    growth_factor_consumption: float
+    growth_factor_peak: float
+
+
+class GrowthProjectionResult(BaseModel):
+    """Growth scenario projection result."""
+    scenario_name: str
+    scenario_type: str
+    base_year: int
+    projection_years: int
+    yearly_projections: list[ProjectedYear]
+    final_consumption_kwh: float
+    final_peak_kw: float
+    total_consumption_growth_percent: float
+    total_peak_growth_percent: float
+
+
+# === Sizing Advisor Models ===
+
+
+class SizingTier(str, Enum):
+    """Sizing recommendation tiers."""
+    MINIMUM = "minimum"
+    OPTIMAL = "optimal"
+    STRATEGIC = "strategic"
+
+
+class SizingRecommendationSchema(BaseModel):
+    """Single sizing recommendation."""
+    tier: str
+    capacity_kwh: float
+    max_power_kw: float
+    capex_eur: float
+    annual_savings_eur: float
+    npv_eur: float
+    payback_years: float
+    irr_percent: Optional[float]
+    probability_positive_npv: float
+    peak_reduction_kw: float
+    cycles_per_year: float
+    battery_utilization_percent: float
+    revenue_streams: dict[str, float]
+    enabled_streams: list[str]
+    rationale: str
+    growth_buffer_years: int
+    assumptions: list[str] = []
+    warnings: list[str] = []
+
+
+class SizingRecommendationsSchema(BaseModel):
+    """Complete sizing recommendations."""
+    minimum: SizingRecommendationSchema
+    optimal: SizingRecommendationSchema
+    strategic: SizingRecommendationSchema
+    profile_summary: dict
+    analysis_date: str
+    methodology_notes: str
+
+
+# === Validation Models ===
+
+
+class ValidationSeverity(str, Enum):
+    """Validation warning severity."""
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+class ValidationWarning(BaseModel):
+    """Single validation warning."""
+    code: str
+    severity: ValidationSeverity
+    message: str
+    field: Optional[str] = None
+    benchmark_range: Optional[tuple[float, float]] = None
+    actual_value: Optional[float] = None
+    recommendation: Optional[str] = None
+
+
+class ValidationReport(BaseModel):
+    """Complete validation report."""
+    is_realistic: bool
+    confidence_score: float
+    warnings: list[ValidationWarning]
+    benchmark_comparison: dict
+
+
+# === Chart Response Models ===
+
+
+class ChartData(BaseModel):
+    """Base64 encoded chart data."""
+    chart_type: str
+    image_base64: str
+    title: str
+    alt_text: str
+
+
+class AnalysisWithChartsResponse(BaseModel):
+    """Analysis response including charts."""
+    success: bool
+    summary: dict
+    scenarios: list[dict]
+    sizing_advice: Optional[SizingRecommendationsSchema] = None
+    revenue_breakdown: Optional[MultiRevenueResult] = None
+    growth_projections: Optional[dict[str, GrowthProjectionResult]] = None
+    validation: Optional[ValidationReport] = None
+    charts: dict[str, str] = {}  # chart_type -> base64 PNG
+    error: Optional[str] = None
