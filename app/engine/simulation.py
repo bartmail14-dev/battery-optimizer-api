@@ -273,8 +273,25 @@ class BatteryDispatchSimulator:
 
         # Pre-calculate statistics voor strategieën
         net_load = df['afname_kwh'] - df['teruglevering_kwh']
-        load_p70 = float(net_load.quantile(0.70))
-        load_p85 = float(net_load.quantile(0.85))
+
+        # BELANGRIJK: Voor effectieve peak shaving, gebruik MAX-gebaseerde thresholds
+        # niet percentiel-gebaseerde (die veel te laag zijn voor echte pieken)
+        load_max = float(net_load.max())
+        load_avg = float(net_load.mean())
+
+        # Target: reduceer pieken tot 85% van maximum (effectieve 15% piekvermindering)
+        # Threshold voor ontladen: 90% van max (alleen bij echte pieken)
+        load_p70 = load_max * 0.85  # Target load na peak shaving
+        load_p85 = load_max * 0.90  # Threshold voor discharge actie
+
+        logger.debug(
+            "Load statistics",
+            load_max_kwh=round(load_max, 2),
+            load_avg_kwh=round(load_avg, 2),
+            threshold_discharge_kwh=round(load_p85, 2),
+            target_load_kwh=round(load_p70, 2)
+        )
+
         avg_tariff = self._calculate_average_tariff(df, tariffs)
 
         # Simuleer elk interval
@@ -558,7 +575,7 @@ class BatteryDispatchSimulator:
     def _peak_shaving_decision(
         self,
         net_load_kwh: float,
-        load_p70: float,
+        load_p70: float,  # Nu: target load (85% van max)
         soc_percent: float,
         max_charge: float,
         max_discharge: float,
@@ -568,24 +585,25 @@ class BatteryDispatchSimulator:
         """
         Peak shaving strategie: focus op maximale piekvermindering.
 
-        Target: reduceer load boven P70 naar P70 niveau
-        Laad: tijdens periodes onder P50 niveau
+        load_p70 = target load (85% van max, waar we naartoe shaven)
+        Discharge drempel = load_p70 * 1.05 (net boven target)
         """
-        # P50 voor laden (onderste helft van load verdeling)
-        load_p50 = load_p70 * 0.7  # Schatting P50 ≈ 70% van P70
+        # Discharge drempel: net boven target (5% marge)
+        discharge_threshold = load_p70 * 1.05
 
-        # ONTLADEN: bij pieken boven P70
-        if net_load_kwh > load_p70 and discharge_headroom > 0 and soc_percent > 0.1:
-            # Target: reduceer naar P70
+        # ONTLADEN: alleen bij echte pieken (boven threshold)
+        if net_load_kwh > discharge_threshold and discharge_headroom > 0 and soc_percent > 0.1:
+            # Shave naar target
             discharge_needed = net_load_kwh - load_p70
             amount = min(discharge_needed, max_discharge, discharge_headroom)
             if amount > 0.05:
                 return 'discharge', amount, 'peak_shaving'
 
-        # LADEN: tijdens lage belasting (< P50) om capaciteit op te bouwen
-        elif net_load_kwh < load_p50 and charge_headroom > 0 and soc_percent < 0.85:
-            # Laad met beperkte snelheid voor betere efficiency
-            amount = min(max_charge * 0.4, charge_headroom)
+        # LADEN: tijdens lage belasting om capaciteit op te bouwen
+        # Laad wanneer load < 60% van target (= 51% van max = lage load)
+        charge_threshold = load_p70 * 0.6
+        if net_load_kwh < charge_threshold and charge_headroom > 0 and soc_percent < 0.9:
+            amount = min(max_charge * 0.5, charge_headroom)
             return 'charge', amount, 'peak_shaving'
 
         return 'idle', 0.0, 'idle'
@@ -640,8 +658,8 @@ class BatteryDispatchSimulator:
         net_load_kwh: float,
         tariff: float,
         avg_tariff: float,
-        load_p70: float,
-        load_p85: float,
+        load_p70: float,  # Target load (85% van max)
+        load_p85: float,  # Discharge threshold (90% van max)
         soc_percent: float,
         max_charge: float,
         max_discharge: float,
@@ -651,18 +669,17 @@ class BatteryDispatchSimulator:
         """
         Hybrid strategie: focus op peak shaving met arbitrage ondersteuning.
 
-        Prioriteit: peak shaving > self-consumption (solar) > arbitrage
+        load_p70 = target (85% van max)
+        load_p85 = discharge threshold (90% van max)
 
-        BELANGRIJK: Bewaar energie voor piekmomenten, niet continu ontladen!
+        BELANGRIJK: Bewaar energie voor piekmomenten!
         """
         # 1. PEAK SHAVING (hoogste prioriteit): ontlaad bij echte pieken
-        # Gebruik P85 als drempel - alleen de hoogste 15% van de loads
-        if net_load_kwh > load_p85 and discharge_headroom > 0 and soc_percent > 0.15:
-            # Shave de piek naar P70 niveau
-            target_load = load_p70
-            discharge_needed = net_load_kwh - target_load
+        if net_load_kwh > load_p85 and discharge_headroom > 0 and soc_percent > 0.1:
+            # Shave naar target (load_p70 = 85% van max)
+            discharge_needed = net_load_kwh - load_p70
             amount = min(discharge_needed, max_discharge, discharge_headroom)
-            if amount > 0.05:  # Minimale discharge threshold
+            if amount > 0.05:
                 return 'discharge', amount, 'peak_shaving'
 
         # 2. SELF-CONSUMPTION: sla zonne-overschot op (alleen bij negatieve load)
@@ -671,22 +688,21 @@ class BatteryDispatchSimulator:
             return 'charge', amount, 'self_consumption'
 
         # 3. LADEN voor peak shaving: laad tijdens lage load periodes
-        # Alleen laden als SoC laag is en we capaciteit nodig hebben voor pieken
-        if net_load_kwh < load_p70 * 0.4 and soc_percent < 0.7 and charge_headroom > 0:
-            # Laad met beperkte snelheid om efficiency te behouden
-            amount = min(max_charge * 0.3, charge_headroom)
+        # Laad wanneer load < 50% van target (= 42.5% van max = lage load)
+        charge_threshold = load_p70 * 0.5
+        if net_load_kwh < charge_threshold and soc_percent < 0.85 and charge_headroom > 0:
+            amount = min(max_charge * 0.4, charge_headroom)
             return 'charge', amount, 'peak_shaving'
 
-        # 4. ARBITRAGE laden: laad bij zeer lage tarieven
+        # 4. ARBITRAGE laden: laad bij zeer lage tarieven (nacht)
         if tariff < avg_tariff * 0.7 and charge_headroom > 0 and soc_percent < 0.9:
-            amount = min(max_charge * 0.4, charge_headroom)
+            amount = min(max_charge * 0.5, charge_headroom)
             return 'charge', amount, 'arbitrage_charge'
 
-        # 5. ARBITRAGE ontladen: alleen bij significant hoge tarieven EN hoge SoC
-        # Maar niet als we de energie nodig hebben voor peak shaving
-        if tariff > avg_tariff * 1.3 and discharge_headroom > 0 and soc_percent > 0.7:
-            # Ontlaad beperkt om energie te bewaren voor pieken
-            amount = min(max_discharge * 0.3, discharge_headroom)
+        # 5. ARBITRAGE ontladen: alleen bij hoge tarieven EN hoge SoC
+        # Beperkt om energie te bewaren voor pieken
+        if tariff > avg_tariff * 1.3 and discharge_headroom > 0 and soc_percent > 0.8:
+            amount = min(max_discharge * 0.2, discharge_headroom)
             return 'discharge', amount, 'arbitrage_discharge'
 
         return 'idle', 0.0, 'idle'
