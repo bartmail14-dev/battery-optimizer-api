@@ -635,7 +635,7 @@ async def analyze_battery_stream(
                     # Growth Scenarios
                     if growth_projections:
                         # Convert GrowthProjectionResult objects to dicts
-                        growth_dict = {k: v.model_dump() if hasattr(v, 'model_dump') else v for k, v in growth_projections.items()}
+                        growth_dict = {k: v.to_dict() if hasattr(v, 'to_dict') else v for k, v in growth_projections.items()}
                         charts['growth_scenarios'] = chart_gen.growth_scenario_comparison(
                             scenarios=growth_dict,
                             battery_size=optimal['size_kwh']
@@ -656,8 +656,8 @@ async def analyze_battery_stream(
                 optimal_size_kwh=optimal["size_kwh"],
                 scenarios=all_results,
                 validation_summary=validation_summary,
-                revenue_breakdown=revenue_breakdown.model_dump() if revenue_breakdown else None,
-                growth_projections={k: v.model_dump() for k, v in growth_projections.items()} if growth_projections else None,
+                revenue_breakdown=revenue_breakdown.to_dict() if revenue_breakdown else None,
+                growth_projections={k: v.to_dict() for k, v in growth_projections.items()} if growth_projections else None,
                 sizing_advice=sizing_advice.to_dict() if sizing_advice else None,
                 charts=charts,
             ).to_sse()
