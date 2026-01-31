@@ -1093,3 +1093,189 @@ class ChartGenerator:
         plt.tight_layout()
 
         return self._fig_to_base64(fig)
+
+    # =========================================================================
+    # INDIVIDUAL CHARTS - Separate downloadable visualizations
+    # =========================================================================
+
+    def npv_distribution_single(
+        self,
+        npv_values: np.ndarray,
+        battery_size: float,
+        title: str = "NPV Distributie"
+    ) -> str:
+        """Single NPV distribution histogram - downloadable."""
+        fig, ax = plt.subplots(figsize=self.figsize)
+
+        n, bins, patches = ax.hist(npv_values, bins=50, density=True, alpha=0.7,
+                                   color=self.colors['primary'], edgecolor='white')
+
+        for patch, left_edge in zip(patches, bins[:-1]):
+            if left_edge < 0:
+                patch.set_facecolor(self.colors['danger'])
+
+        mean_npv = np.mean(npv_values)
+        median_npv = np.median(npv_values)
+        prob_positive = np.mean(npv_values > 0) * 100
+
+        ax.axvline(mean_npv, color=self.colors['success'], linestyle='-', linewidth=2,
+                   label=f'Gemiddelde: {self._format_currency(mean_npv)}')
+        ax.axvline(median_npv, color=self.colors['secondary'], linestyle='--', linewidth=2,
+                   label=f'Mediaan: {self._format_currency(median_npv)}')
+        ax.axvline(0, color='black', linestyle='-', linewidth=1)
+
+        ax.set_title(f'{title} - {battery_size} kWh ({prob_positive:.0f}% kans positief)',
+                     fontweight='bold', fontsize=14)
+        ax.set_xlabel('NPV (€)', fontsize=12)
+        ax.set_ylabel('Dichtheid', fontsize=12)
+        ax.xaxis.set_major_formatter(FuncFormatter(self._format_currency))
+        ax.legend(loc='upper right')
+        ax.grid(True, alpha=0.3, axis='y')
+
+        return self._fig_to_base64(fig)
+
+    def payback_distribution_single(
+        self,
+        payback_values: np.ndarray,
+        battery_size: float,
+        title: str = "Terugverdientijd Distributie"
+    ) -> str:
+        """Single payback distribution histogram - downloadable."""
+        fig, ax = plt.subplots(figsize=self.figsize)
+
+        valid_payback = payback_values[payback_values < 25]
+        ax.hist(valid_payback, bins=40, density=True, alpha=0.7,
+                color=self.colors['secondary'], edgecolor='white')
+
+        median_pb = np.median(valid_payback)
+        prob_10y = np.mean(payback_values <= 10) * 100
+
+        ax.axvline(median_pb, color=self.colors['success'], linestyle='-', linewidth=2,
+                   label=f'Mediaan: {median_pb:.1f} jaar')
+        ax.axvline(10, color=self.colors['warning'], linestyle='--', linewidth=2,
+                   label='Benchmark: 10 jaar')
+
+        ax.set_title(f'{title} - {battery_size} kWh ({prob_10y:.0f}% binnen 10 jaar)',
+                     fontweight='bold', fontsize=14)
+        ax.set_xlabel('Terugverdientijd (jaren)', fontsize=12)
+        ax.set_ylabel('Dichtheid', fontsize=12)
+        ax.legend(loc='upper right')
+        ax.grid(True, alpha=0.3, axis='y')
+
+        return self._fig_to_base64(fig)
+
+    def risk_metrics_single(
+        self,
+        npv_values: np.ndarray,
+        battery_size: float,
+        title: str = "Risicometrieken"
+    ) -> str:
+        """Single risk metrics bar chart - downloadable."""
+        fig, ax = plt.subplots(figsize=self.figsize)
+
+        mean_npv = np.mean(npv_values)
+        median_npv = np.median(npv_values)
+        std_npv = np.std(npv_values)
+        var_5 = np.percentile(npv_values, 5)
+        cvar_5 = np.mean(npv_values[npv_values <= var_5])
+
+        metrics = ['Gemiddelde NPV', 'Mediaan NPV', 'Standaarddeviatie', 'VaR (5%)', 'CVaR (5%)']
+        values = [mean_npv, median_npv, std_npv, var_5, cvar_5]
+        colors_risk = [self.colors['success'], self.colors['success'], self.colors['gray'],
+                       self.colors['warning'], self.colors['danger']]
+
+        y_pos = np.arange(len(metrics))
+        bars = ax.barh(y_pos, values, color=colors_risk, alpha=0.8)
+
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(metrics)
+        ax.axvline(0, color='black', linestyle='-', linewidth=1)
+        ax.set_title(f'{title} - {battery_size} kWh', fontweight='bold', fontsize=14)
+        ax.set_xlabel('Waarde (€)', fontsize=12)
+        ax.xaxis.set_major_formatter(FuncFormatter(self._format_currency))
+        ax.grid(True, alpha=0.3, axis='x')
+
+        for bar, val in zip(bars, values):
+            ax.annotate(self._format_currency(val),
+                        xy=(bar.get_width(), bar.get_y() + bar.get_height()/2),
+                        xytext=(5, 0), textcoords='offset points', va='center', fontsize=10)
+
+        plt.tight_layout()
+        return self._fig_to_base64(fig)
+
+    def load_duration_curve_single(
+        self,
+        profile_df,
+        title: str = "Load Duration Curve"
+    ) -> str:
+        """Single load duration curve - downloadable."""
+        fig, ax = plt.subplots(figsize=self.figsize)
+
+        if 'afname_kwh' in profile_df.columns:
+            load_kwh = profile_df['afname_kwh'].values
+        else:
+            load_kwh = profile_df['afname'].values
+        load_kw = load_kwh * 4
+
+        sorted_load = np.sort(load_kw)[::-1]
+        duration_percent = np.arange(len(sorted_load)) / len(sorted_load) * 100
+
+        ax.fill_between(duration_percent, sorted_load, alpha=0.3, color=self.colors['primary'])
+        ax.plot(duration_percent, sorted_load, color=self.colors['primary'], linewidth=2)
+
+        for pct, color in [(90, self.colors['secondary']), (95, self.colors['warning']), (99, self.colors['danger'])]:
+            val = np.percentile(load_kw, pct)
+            ax.axhline(y=val, color=color, linestyle='--', alpha=0.7, label=f'P{pct}: {val:.0f} kW')
+
+        ax.axhline(y=np.max(load_kw), color='black', linestyle='-', linewidth=2, label=f'MAX: {np.max(load_kw):.0f} kW')
+
+        ax.set_title(title, fontweight='bold', fontsize=14)
+        ax.set_xlabel('Percentage van de tijd (%)', fontsize=12)
+        ax.set_ylabel('Vermogen (kW)', fontsize=12)
+        ax.legend(loc='upper right')
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(0, 100)
+
+        plt.tight_layout()
+        return self._fig_to_base64(fig)
+
+    def daily_pattern_single(
+        self,
+        profile_df,
+        title: str = "Dagelijks Verbruikspatroon"
+    ) -> str:
+        """Single daily pattern chart - downloadable."""
+        import pandas as pd
+        fig, ax = plt.subplots(figsize=self.figsize)
+
+        if 'afname_kwh' in profile_df.columns:
+            load_kwh = profile_df['afname_kwh'].values
+        else:
+            load_kwh = profile_df['afname'].values
+        load_kw = load_kwh * 4
+
+        if 'timestamp' in profile_df.columns:
+            timestamps = pd.to_datetime(profile_df['timestamp'])
+            hours = timestamps.dt.hour + timestamps.dt.minute / 60
+        else:
+            hours = np.tile(np.repeat(np.arange(24), 4), len(load_kw) // 96 + 1)[:len(load_kw)]
+
+        hour_bins = np.floor(hours).astype(int)
+        hourly_mean = np.array([load_kw[hour_bins == h].mean() for h in range(24)])
+        hourly_max = np.array([load_kw[hour_bins == h].max() for h in range(24)])
+        hourly_min = np.array([load_kw[hour_bins == h].min() for h in range(24)])
+
+        x_hours = np.arange(24)
+        ax.fill_between(x_hours, hourly_min, hourly_max, alpha=0.2, color=self.colors['primary'], label='Min-Max bereik')
+        ax.plot(x_hours, hourly_mean, color=self.colors['primary'], linewidth=2.5, label='Gemiddeld')
+
+        ax.set_title(title, fontweight='bold', fontsize=14)
+        ax.set_xlabel('Uur van de dag', fontsize=12)
+        ax.set_ylabel('Vermogen (kW)', fontsize=12)
+        ax.legend(loc='upper right')
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(0, 23)
+        ax.set_xticks(range(0, 24, 3))
+
+        plt.tight_layout()
+        return self._fig_to_base64(fig)

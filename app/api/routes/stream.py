@@ -617,15 +617,23 @@ async def analyze_battery_stream(
                 try:
                     chart_gen = ChartGenerator()
 
-                    # 1. Profile Overview - comprehensive profile analysis
+                    # 1. Profile Charts (Combined + Individual)
                     try:
+                        # Combined overview (legacy - 4 subplots)
                         charts['profile_overview'] = chart_gen.profile_overview(
                             profile_df=profile_df,
                             title="Energieprofiel Analyse"
                         )
-                        logger.info("Profile overview chart generated")
+                        # Individual charts (separately downloadable)
+                        charts['load_duration_curve'] = chart_gen.load_duration_curve_single(
+                            profile_df=profile_df
+                        )
+                        charts['daily_pattern'] = chart_gen.daily_pattern_single(
+                            profile_df=profile_df
+                        )
+                        logger.info("Profile charts generated (combined + 2 individual)")
                     except Exception as e:
-                        logger.warning(f"Profile overview chart error: {e}")
+                        logger.warning(f"Profile chart error: {e}")
 
                     # 2. Peak Shaving Visualization
                     try:
@@ -650,9 +658,8 @@ async def analyze_battery_stream(
                     except Exception as e:
                         logger.warning(f"Dispatch heatmap error: {e}")
 
-                    # 4. Monte Carlo Summary
+                    # 4. Monte Carlo Charts (Combined + Individual)
                     try:
-                        # Get NPV and payback arrays from optimal scenario simulation
                         optimal_result = next((r for r in all_results if r['size_kwh'] == optimal['size_kwh']), None)
                         if optimal_result:
                             # Generate synthetic distributions for visualization
@@ -665,15 +672,30 @@ async def analyze_battery_stream(
                             payback_values = np.random.normal(payback_mean, payback_std, 1000)
                             payback_values = np.clip(payback_values, 0.5, 25)
 
+                            # Combined chart (legacy)
                             charts['monte_carlo_summary'] = chart_gen.monte_carlo_summary(
                                 npv_values=npv_values,
                                 payback_values=payback_values,
                                 battery_size=optimal['size_kwh'],
                                 title="Monte Carlo Simulatie"
                             )
-                            logger.info("Monte Carlo summary chart generated")
+
+                            # Individual charts (separately downloadable)
+                            charts['npv_distribution'] = chart_gen.npv_distribution_single(
+                                npv_values=npv_values,
+                                battery_size=optimal['size_kwh']
+                            )
+                            charts['payback_distribution'] = chart_gen.payback_distribution_single(
+                                payback_values=payback_values,
+                                battery_size=optimal['size_kwh']
+                            )
+                            charts['risk_metrics'] = chart_gen.risk_metrics_single(
+                                npv_values=npv_values,
+                                battery_size=optimal['size_kwh']
+                            )
+                            logger.info("Monte Carlo charts generated (combined + 3 individual)")
                     except Exception as e:
-                        logger.warning(f"Monte Carlo summary chart error: {e}")
+                        logger.warning(f"Monte Carlo chart error: {e}")
 
                     # 5. NPV Distribution / Scenario Comparison
                     if all_results:
