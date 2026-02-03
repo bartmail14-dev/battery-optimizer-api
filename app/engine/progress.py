@@ -226,20 +226,38 @@ def create_scenario_result_event(
     npv_p5: float,
     npv_p95: float,
     payback_mean: float,
-    cycles_per_year: float
+    cycles_per_year: float,
+    irr_mean: float = None,
+    capex: float = None,
+    peak_reduction_kw: float = None,
+    probability_positive_npv: float = None,
+    lcos: float = None
 ) -> ProgressEvent:
-    """Create a scenario completion event."""
+    """Create a scenario completion event with all financial metrics."""
+    data = {
+        "npv_mean": round(npv_mean, 2),
+        "npv_p5": round(npv_p5, 2),
+        "npv_p95": round(npv_p95, 2),
+        "payback_mean": round(payback_mean, 2),
+        "cycles_per_year": round(cycles_per_year, 1),
+    }
+    # Add optional fields if provided
+    if irr_mean is not None:
+        data["irr_mean"] = round(irr_mean, 4)
+    if capex is not None:
+        data["capex"] = round(capex, 2)
+    if peak_reduction_kw is not None:
+        data["peak_reduction_kw"] = round(peak_reduction_kw, 1)
+    if probability_positive_npv is not None:
+        data["probability_positive_npv"] = round(probability_positive_npv, 3)
+    if lcos is not None:
+        data["lcos"] = round(lcos, 4)
+
     return ProgressEvent(
         type=ProgressEventType.SCENARIO_RESULT,
         scenario_kwh=scenario_kwh,
         message=f"Scenario {scenario_kwh} kWh compleet",
-        data={
-            "npv_mean": round(npv_mean, 2),
-            "npv_p5": round(npv_p5, 2),
-            "npv_p95": round(npv_p95, 2),
-            "payback_mean": round(payback_mean, 2),
-            "cycles_per_year": round(cycles_per_year, 1),
-        }
+        data=data
     )
 
 

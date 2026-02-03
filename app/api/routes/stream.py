@@ -584,14 +584,19 @@ async def analyze_battery_stream(
 
                 all_results.append(scenario_result)
 
-                # Send scenario complete event
+                # Send scenario complete event with ALL metrics for frontend
                 yield create_scenario_result_event(
                     scenario_kwh=size_kwh,
                     npv_mean=npv_mean,
                     npv_p5=npv_p5,
                     npv_p95=npv_p95,
                     payback_mean=payback_mean,
-                    cycles_per_year=baseline_cycles
+                    cycles_per_year=baseline_cycles,
+                    irr_mean=irr_mean,
+                    capex=baseline_tco.capex_total,
+                    peak_reduction_kw=baseline_result.summary.peak_reduction_kw,
+                    probability_positive_npv=prob_positive,
+                    lcos=lcos_mean
                 ).to_sse()
 
                 await asyncio.sleep(0.2)
@@ -1263,13 +1268,19 @@ async def analyze_battery_stream_from_session(
 
                 all_results.append(scenario_result)
 
+                # Send scenario complete event with ALL metrics for frontend
                 yield create_scenario_result_event(
                     scenario_kwh=size_kwh,
                     npv_mean=npv_mean,
                     npv_p5=npv_p5,
                     npv_p95=npv_p95,
                     payback_mean=payback_mean,
-                    cycles_per_year=baseline_cycles
+                    cycles_per_year=baseline_cycles,
+                    irr_mean=irr_mean,
+                    capex=baseline_tco.capex_total,
+                    peak_reduction_kw=baseline_result.summary.peak_reduction_kw,
+                    probability_positive_npv=prob_positive,
+                    lcos=lcos_mean
                 ).to_sse()
 
                 await asyncio.sleep(0.2)
