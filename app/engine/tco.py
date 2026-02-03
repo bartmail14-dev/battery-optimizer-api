@@ -505,7 +505,9 @@ class TCOCalculator:
         self,
         tco: TCOResult,
         annual_savings: float,
-        peak_savings_annual: float = 0
+        peak_savings_annual: float = 0,
+        annual_cycles: float = 0,
+        average_dod: float = 0.8
     ) -> FinancialMetrics:
         """
         Bereken financiële metrics voor investeringsbeslissing.
@@ -514,6 +516,8 @@ class TCOCalculator:
             tco: TCO resultaat
             annual_savings: Jaarlijkse energiebesparingen (€)
             peak_savings_annual: Jaarlijkse piekbesparingen (€)
+            annual_cycles: Werkelijke cycli per jaar uit simulatie
+            average_dod: Gemiddelde depth of discharge uit simulatie
 
         Returns:
             FinancialMetrics met alle metrics
@@ -531,11 +535,11 @@ class TCOCalculator:
         cumulative_npv = -tco.capex_total
 
         for year in range(1, self.analysis_years + 1):
-            # Degradatie-factor voor besparingen
+            # Degradatie-factor voor besparingen - gebruik ECHTE cycli uit simulatie
             degradation = self.degradation_model.calculate_degradation(
                 years=year,
-                cycles=300 * year,  # Assumptie
-                average_dod=0.8
+                cycles=annual_cycles * year,
+                average_dod=average_dod
             )
 
             year_savings = total_annual_savings * degradation.remaining_capacity

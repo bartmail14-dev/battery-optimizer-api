@@ -97,6 +97,36 @@ class SimulationScenario:
 
 
 @dataclass
+class YearlyCashflowPercentiles:
+    """
+    Percentiles van cashflows voor één jaar.
+    Gebruikt voor pluim/waaier visualisatie.
+    """
+    year: int
+    p5: float
+    p10: float
+    p25: float
+    p50: float
+    p75: float
+    p90: float
+    p95: float
+    mean: float
+
+    def to_dict(self) -> dict:
+        return {
+            "year": self.year,
+            "p5": round(self.p5, 2),
+            "p10": round(self.p10, 2),
+            "p25": round(self.p25, 2),
+            "p50": round(self.p50, 2),
+            "p75": round(self.p75, 2),
+            "p90": round(self.p90, 2),
+            "p95": round(self.p95, 2),
+            "mean": round(self.mean, 2)
+        }
+
+
+@dataclass
 class MonteCarloResult:
     """
     Volledig Monte Carlo resultaat.
@@ -149,6 +179,9 @@ class MonteCarloResult:
     npv_histogram: Dict[str, List[float]]
     payback_histogram: Dict[str, List[float]]
 
+    # Yearly cashflow percentiles (voor pluim/waaier visualisatie)
+    yearly_cashflows: List[YearlyCashflowPercentiles] = field(default_factory=list)
+
     def to_dict(self) -> dict:
         """Convert to dictionary for API response."""
         return {
@@ -196,7 +229,8 @@ class MonteCarloResult:
             "histogram": {
                 "npv": self.npv_histogram,
                 "payback": self.payback_histogram,
-            }
+            },
+            "yearly_cashflows": [cf.to_dict() for cf in self.yearly_cashflows]
         }
 
 
@@ -362,10 +396,12 @@ class MonteCarloEngine:
                 custom_capex=scenario_capex
             )
 
-            # Financial metrics
+            # Financial metrics - gebruik ECHTE cycli en DoD uit simulatie
             financials = self.tco_calculator.calculate_financial_metrics(
                 tco=scenario_tco,
-                annual_savings=scenario_savings
+                annual_savings=scenario_savings,
+                annual_cycles=scenario_cycles,
+                average_dod=baseline_avg_dod
             )
 
             scenario = SimulationScenario(
@@ -382,6 +418,13 @@ class MonteCarloEngine:
                 total_cycles=scenario_cycles * self.analysis_years
             )
             scenarios.append(scenario)
+
+        # === CALCULATE YEARLY CASHFLOWS (voor pluim/waaier visualisatie) ===
+        yearly_cashflows = self._calculate_yearly_cashflows(
+            scenarios=scenarios,
+            baseline_tco=baseline_tco,
+            analysis_years=self.analysis_years
+        )
 
         # === CALCULATE STATISTICS ===
         npv_values = np.array([s.npv for s in scenarios])
@@ -476,7 +519,8 @@ class MonteCarloEngine:
             recommendation=recommendation,
             scenarios=scenarios,
             npv_histogram=npv_histogram,
-            payback_histogram=payback_histogram
+            payback_histogram=payback_histogram,
+            yearly_cashflows=yearly_cashflows
         )
 
     def _generate_lhs_samples(
@@ -646,6 +690,118 @@ class MonteCarloEngine:
             "bin_edges": [float(e) for e in bin_edges],
             "bin_centers": [float(c) for c in bin_centers]
         }
+
+    def _calculate_yearly_cashflows(
+        self,
+        scenarios: List[SimulationScenario],
+        baseline_tco: TCOResult,
+        analysis_years: int,
+        yearly_price_volatility: float = 0.12
+    ) -> List[YearlyCashflowPercentiles]:
+        """
+        Bereken cumulatieve cashflow percentiles per jaar voor pluim/waaier visualisatie.
+
+        Dit geeft de spreiding van cumulatieve cashflows over tijd weer,
+        wat essentieel is voor het visualiseren van onzekerheid in de business case.
+
+        Gebruikt een stochastisch prijsmodel met jaar-op-jaar volatiliteit om
+        realistische onzekerheidsspreiding te creëren (de karakteristieke "pluim" vorm).
+
+        Args:
+            scenarios: Monte Carlo simulatie scenario's
+            baseline_tco: TCO berekening voor baseline
+            analysis_years: Aantal analysejaren
+            yearly_price_volatility: Jaarlijkse volatiliteit energieprijzen (default 12%)
+                Historische Nederlandse energieprijsvolatiliteit: 10-20% per jaar.
+
+        Returns:
+            List van YearlyCashflowPercentiles, één per jaar
+        """
+        n_scenarios = len(scenarios)
+        n_years = analysis_years
+
+        # Matrix van cumulatieve cashflows: [scenario, year]
+        cumulative_cashflows = np.zeros((n_scenarios, n_years + 1))  # +1 voor jaar 0
+
+        # Pre-genereer prijsmultiplier paden voor ALLE scenario's
+        # Geometric Brownian Motion (GBM) voor realistische prijsdynamiek
+        price_multiplier_paths = np.ones((n_scenarios, n_years + 1))
+
+        # Log-normale random walk met variantie-gecorrigeerde drift
+        drift = -0.5 * yearly_price_volatility**2  # Ito correctie
+
+        for i in range(n_scenarios):
+            for year in range(1, n_years + 1):
+                shock = np.random.normal(0, yearly_price_volatility)
+                price_multiplier_paths[i, year] = price_multiplier_paths[i, year-1] * np.exp(drift + shock)
+
+        # Jaar 0: initiële investering (negatief)
+        initial_capex = baseline_tco.capex_total
+        for i, scenario in enumerate(scenarios):
+            # CAPEX schaalt met de capex_multiplier van het scenario
+            scenario_capex = initial_capex * scenario.capex_multiplier
+            cumulative_cashflows[i, 0] = -scenario_capex
+
+        # Jaren 1 tot n_years: cumulatieve cashflows
+        for i, scenario in enumerate(scenarios):
+            scenario_capex = initial_capex * scenario.capex_multiplier
+            annual_savings = scenario.annual_savings
+
+            # Bereken degradatie factor per jaar
+            # Gebruik de degradation_multiplier om variatie in degradatie te modelleren
+            base_degradation_rate = 0.02  # 2% per jaar baseline (LFP)
+            degradation_rate = base_degradation_rate * scenario.degradation_multiplier
+
+            cumulative = -scenario_capex  # Start met negatieve CAPEX
+
+            for year in range(1, n_years + 1):
+                # Capacity factor door degradatie
+                capacity_factor = (1 - degradation_rate) ** year
+
+                # Jaar-specifieke prijsmultiplier van stochastisch pad
+                price_multiplier = price_multiplier_paths[i, year]
+
+                # Jaarlijkse besparing met degradatie EN marktprijsvolatiliteit
+                year_savings = annual_savings * capacity_factor * price_multiplier
+
+                # Jaarlijkse onderhoudskosten (neem aan 1% van CAPEX per jaar)
+                maintenance = scenario_capex * 0.01
+
+                # Netto cashflow dit jaar
+                net_cashflow = year_savings - maintenance
+
+                # Cumulatief
+                cumulative += net_cashflow
+                cumulative_cashflows[i, year] = cumulative
+
+        # Bereken percentiles per jaar
+        yearly_percentiles: List[YearlyCashflowPercentiles] = []
+
+        for year in range(n_years + 1):
+            year_cashflows = cumulative_cashflows[:, year]
+
+            percentiles = YearlyCashflowPercentiles(
+                year=year,
+                p5=float(np.percentile(year_cashflows, 5)),
+                p10=float(np.percentile(year_cashflows, 10)),
+                p25=float(np.percentile(year_cashflows, 25)),
+                p50=float(np.percentile(year_cashflows, 50)),
+                p75=float(np.percentile(year_cashflows, 75)),
+                p90=float(np.percentile(year_cashflows, 90)),
+                p95=float(np.percentile(year_cashflows, 95)),
+                mean=float(np.mean(year_cashflows))
+            )
+            yearly_percentiles.append(percentiles)
+
+        logger.debug(
+            "Yearly cashflows calculated",
+            n_years=n_years,
+            n_scenarios=n_scenarios,
+            year_0_p50=yearly_percentiles[0].p50 if yearly_percentiles else None,
+            final_year_p50=yearly_percentiles[-1].p50 if yearly_percentiles else None
+        )
+
+        return yearly_percentiles
 
     def optimize_size(
         self,

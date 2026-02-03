@@ -60,10 +60,145 @@ from app.engine.growth_projector import GrowthProjector, GrowthScenarioType, get
 from app.engine.sizing_advisor import SizingAdvisor, BatteryConstraints
 from app.visualization.charts import ChartGenerator
 
+# AI Review
+from app.services.gemini_reviewer import get_gemini_reviewer
+
 import numpy as np
+from typing import Dict, Any
 
 router = APIRouter()
 logger = structlog.get_logger()
+
+
+def calculate_yearly_cashflows(
+    sim_data: List[Dict[str, float]],
+    analysis_years: int,
+    max_paths: int = 100,
+    yearly_price_volatility: float = 0.12
+) -> Dict[str, Any]:
+    """
+    Calculate cumulative cashflow data for Monte Carlo fan/spaghetti visualization.
+
+    Uses a stochastic price model with year-on-year volatility to create realistic
+    uncertainty spreading (the characteristic "fan" or "pluim" shape).
+
+    Args:
+        sim_data: List of simulation data dicts with 'capex', 'savings', 'degrad_mult'
+        analysis_years: Number of years in the analysis
+        max_paths: Maximum number of individual paths to include (for spaghetti plot)
+        yearly_price_volatility: Annual volatility for energy prices (default 12%)
+            This creates realistic year-on-year price uncertainty.
+            Historical Dutch energy price volatility: 10-20% per year.
+
+    Returns:
+        Dict with:
+        - percentiles: List of dicts with year and percentile values
+        - paths: List of individual simulation paths (for spaghetti plot)
+    """
+    n_sims = len(sim_data)
+    if n_sims == 0:
+        return {"percentiles": [], "paths": []}
+
+    n_years = analysis_years
+
+    # Matrix of cumulative cashflows: [simulation, year]
+    cumulative_cashflows = np.zeros((n_sims, n_years + 1))  # +1 for year 0
+
+    base_degradation_rate = 0.02  # 2% per year baseline
+
+    # Pre-generate price multiplier paths for ALL simulations
+    # Using Geometric Brownian Motion (GBM) for realistic price dynamics
+    # This creates the characteristic spreading uncertainty over time
+    price_multiplier_paths = np.ones((n_sims, n_years + 1))
+
+    # Generate log-normal random walk for each simulation
+    # Using variance-corrected drift to ensure E[multiplier] = 1
+    drift = -0.5 * yearly_price_volatility**2  # Ito correction
+
+    for i in range(n_sims):
+        for year in range(1, n_years + 1):
+            # Random shock for this year
+            shock = np.random.normal(0, yearly_price_volatility)
+            # Geometric random walk: each year builds on previous
+            price_multiplier_paths[i, year] = price_multiplier_paths[i, year-1] * np.exp(drift + shock)
+
+    for i, sim in enumerate(sim_data):
+        capex = sim['capex']
+        savings = sim['savings']
+        degrad_mult = sim['degrad_mult']
+
+        degradation_rate = base_degradation_rate * degrad_mult
+
+        # Year 0: initial investment (negative)
+        cumulative_cashflows[i, 0] = -capex
+
+        cumulative = -capex
+        for year in range(1, n_years + 1):
+            # Capacity factor due to degradation
+            capacity_factor = (1 - degradation_rate) ** year
+
+            # Year-specific price multiplier from stochastic path
+            # This creates the realistic "spreading" in the spaghetti plot
+            price_multiplier = price_multiplier_paths[i, year]
+
+            # Annual savings with degradation AND market price volatility
+            year_savings = savings * capacity_factor * price_multiplier
+
+            # Annual maintenance (assume 1% of CAPEX)
+            maintenance = capex * 0.01
+
+            # Net cashflow this year
+            net_cashflow = year_savings - maintenance
+
+            cumulative += net_cashflow
+            cumulative_cashflows[i, year] = cumulative
+
+    # Calculate percentiles per year
+    yearly_percentiles = []
+
+    for year in range(n_years + 1):
+        year_cashflows = cumulative_cashflows[:, year]
+
+        yearly_percentiles.append({
+            "year": year,
+            "p5": round(float(np.percentile(year_cashflows, 5)), 2),
+            "p10": round(float(np.percentile(year_cashflows, 10)), 2),
+            "p25": round(float(np.percentile(year_cashflows, 25)), 2),
+            "p50": round(float(np.percentile(year_cashflows, 50)), 2),
+            "p75": round(float(np.percentile(year_cashflows, 75)), 2),
+            "p90": round(float(np.percentile(year_cashflows, 90)), 2),
+            "p95": round(float(np.percentile(year_cashflows, 95)), 2),
+            "mean": round(float(np.mean(year_cashflows)), 2)
+        })
+
+    # Extract individual paths for spaghetti plot (sample if too many)
+    paths = []
+    if n_sims <= max_paths:
+        indices = range(n_sims)
+    else:
+        # Stratified sampling: include extremes and random middle
+        sorted_by_final = np.argsort(cumulative_cashflows[:, -1])
+        # Include top 10%, bottom 10%, and random from middle
+        n_extreme = max(5, max_paths // 10)
+        n_middle = max_paths - 2 * n_extreme
+        bottom_indices = sorted_by_final[:n_extreme].tolist()
+        top_indices = sorted_by_final[-n_extreme:].tolist()
+        middle_pool = sorted_by_final[n_extreme:-n_extreme]
+        middle_indices = np.random.choice(middle_pool, size=min(n_middle, len(middle_pool)), replace=False).tolist()
+        indices = bottom_indices + middle_indices + top_indices
+
+    for idx in indices:
+        path = []
+        for year in range(n_years + 1):
+            path.append(round(float(cumulative_cashflows[idx, year]), 2))
+        paths.append(path)
+
+    return {
+        "percentiles": yearly_percentiles,
+        "paths": paths,
+        "n_simulations": n_sims,
+        "n_paths_shown": len(paths)
+    }
 
 
 @router.post("/analyze-stream")
@@ -83,6 +218,8 @@ async def analyze_battery_stream(
     peak_rate: float = Form(0.35),
     off_peak_rate: float = Form(0.22),
     capacity_tariff: float = Form(12.50),
+    # Location (for AI review context)
+    postcode: Optional[str] = Form(None),
     # COMCAM Features
     enable_revenue_streams: bool = Form(True),
     enable_growth_scenarios: bool = Form(True),
@@ -311,6 +448,9 @@ async def analyze_battery_stream(
                 irrs = []
                 lcos_values = []
 
+                # Store per-simulation data for yearly cashflow calculation
+                sim_data_for_cashflows = []  # List of (capex, savings, degrad_mult)
+
                 report_interval = max(1, n_simulations // 20)  # ~20 updates per scenario
 
                 for i in range(n_simulations):
@@ -332,7 +472,9 @@ async def analyze_battery_stream(
 
                     financials = tco_calc.calculate_financial_metrics(
                         tco=scenario_tco,
-                        annual_savings=scenario_savings
+                        annual_savings=scenario_savings,
+                        annual_cycles=scenario_cycles,
+                        average_dod=baseline_dod
                     )
 
                     npvs.append(financials.npv)
@@ -340,6 +482,13 @@ async def analyze_battery_stream(
                     if financials.irr is not None:
                         irrs.append(financials.irr)
                     lcos_values.append(scenario_tco.lcos)
+
+                    # Store data for yearly cashflow calculation
+                    sim_data_for_cashflows.append({
+                        'capex': scenario_capex,
+                        'savings': scenario_savings,
+                        'degrad_mult': degrad_mult
+                    })
 
                     # Report progress
                     if (i + 1) % report_interval == 0 or i == n_simulations - 1:
@@ -407,6 +556,12 @@ async def analyze_battery_stream(
                     irr_p50=float(np.percentile(irrs, 50)) if irrs else None
                 )
 
+                # Calculate yearly cashflows for fan/plume visualization
+                yearly_cashflows = calculate_yearly_cashflows(
+                    sim_data=sim_data_for_cashflows,
+                    analysis_years=analysis_years
+                )
+
                 scenario_result = {
                     "size_kwh": size_kwh,
                     "npv_mean": round(npv_mean, 2),
@@ -424,6 +579,7 @@ async def analyze_battery_stream(
                     "cycles_per_year": round(baseline_cycles, 1),
                     "peak_reduction_kw": round(baseline_result.summary.peak_reduction_kw or 0, 1),
                     "capex": round(baseline_tco.capex_total, 2),
+                    "yearly_cashflows": yearly_cashflows,
                 }
 
                 all_results.append(scenario_result)
@@ -741,11 +897,53 @@ async def analyze_battery_stream(
             profile_stats = {
                 "peak_kw": round(float(afname_kwh_series.max() * 4), 1),  # Convert 15-min kWh to kW
                 "average_kw": round(float(afname_kwh_series.mean() * 4), 1),
+                "avg_kw": round(float(afname_kwh_series.mean() * 4), 1),  # Alias for Gemini
                 "p95_kw": round(float(afname_kwh_series.quantile(0.95) * 4), 1),
                 "p99_kw": round(float(afname_kwh_series.quantile(0.99) * 4), 1),
                 "total_kwh": round(float(afname_kwh_series.sum()), 0),
+                "annual_kwh": round(float(afname_kwh_series.sum() * (365 / (len(profile_df) / 96))), 0),
                 "annual_consumption_kwh": round(float(afname_kwh_series.sum() * (365 / (len(profile_df) / 96))), 0),
             }
+
+            # === PHASE 7: AI REVIEW ===
+            ai_review = None
+            try:
+                yield ProgressEvent(
+                    type=ProgressEventType.VALIDATION_CHECK,
+                    progress_percent=95,
+                    message="AI review uitvoeren...",
+                    phase="ai_review",
+                ).to_sse()
+
+                # Build enrichment-like data from tariffs for AI context
+                enrichment_for_ai = {
+                    "netbeheerder": "Onbekend",
+                    "netbeheer_tarieven": {
+                        "capaciteitstarief_kw_maand": capacity_tariff,
+                    },
+                    "commodity_prijzen": {
+                        "piek_gemiddelde": peak_rate * 1000,  # Convert to €/MWh
+                        "dal_gemiddelde": off_peak_rate * 1000,
+                    },
+                }
+
+                gemini_reviewer = get_gemini_reviewer()
+                review_result = await gemini_reviewer.review_analysis(
+                    scenarios=all_results,
+                    optimal_size_kwh=optimal["size_kwh"],
+                    profile_stats=profile_stats,
+                    enrichment_data=enrichment_for_ai,
+                    n_simulations=n_simulations,
+                    postcode=postcode,
+                )
+                ai_review = review_result.model_dump()
+                logger.info(
+                    "AI review completed",
+                    recommendation=review_result.recommendation,
+                    confidence=review_result.confidence_level,
+                )
+            except Exception as e:
+                logger.warning(f"AI review failed (continuing without): {e}")
 
             yield create_completed_event(
                 optimal_size_kwh=optimal["size_kwh"],
@@ -756,6 +954,7 @@ async def analyze_battery_stream(
                 sizing_advice=sizing_advice.to_dict() if sizing_advice else None,
                 charts=charts,
                 profile_stats=profile_stats,
+                ai_review=ai_review,
             ).to_sse()
 
             logger.info(
@@ -961,6 +1160,7 @@ async def analyze_battery_stream_from_session(
                 paybacks = []
                 irrs = []
                 lcos_values = []
+                sim_data_for_cashflows = []  # For yearly cashflow calculation
                 report_interval = max(1, n_simulations // 20)
 
                 for i in range(n_simulations):
@@ -981,7 +1181,9 @@ async def analyze_battery_stream_from_session(
 
                     financials = tco_calc.calculate_financial_metrics(
                         tco=scenario_tco,
-                        annual_savings=scenario_savings
+                        annual_savings=scenario_savings,
+                        annual_cycles=scenario_cycles,
+                        average_dod=baseline_dod
                     )
 
                     npvs.append(financials.npv)
@@ -989,6 +1191,13 @@ async def analyze_battery_stream_from_session(
                     if financials.irr is not None:
                         irrs.append(financials.irr)
                     lcos_values.append(scenario_tco.lcos)
+
+                    # Store data for yearly cashflow calculation
+                    sim_data_for_cashflows.append({
+                        'capex': scenario_capex,
+                        'savings': scenario_savings,
+                        'degrad_mult': degrad_mult
+                    })
 
                     if (i + 1) % report_interval == 0 or i == n_simulations - 1:
                         npv_array = np.array(npvs)
@@ -1026,6 +1235,12 @@ async def analyze_battery_stream_from_session(
                     irr_p50=float(np.percentile(irrs, 50)) if irrs else None
                 )
 
+                # Calculate yearly cashflows for fan/plume visualization
+                yearly_cashflows = calculate_yearly_cashflows(
+                    sim_data=sim_data_for_cashflows,
+                    analysis_years=analysis_years
+                )
+
                 scenario_result = {
                     "size_kwh": size_kwh,
                     "npv_mean": round(npv_mean, 2),
@@ -1043,6 +1258,7 @@ async def analyze_battery_stream_from_session(
                     "cycles_per_year": round(baseline_cycles, 1),
                     "peak_reduction_kw": round(baseline_result.summary.peak_reduction_kw or 0, 1),
                     "capex": round(baseline_tco.capex_total, 2),
+                    "yearly_cashflows": yearly_cashflows,
                 }
 
                 all_results.append(scenario_result)

@@ -270,6 +270,7 @@ def create_completed_event(
     sizing_advice: Optional[Dict] = None,
     charts: Optional[Dict[str, str]] = None,
     profile_stats: Optional[Dict] = None,
+    ai_review: Optional[Dict] = None,
 ) -> ProgressEvent:
     """Create a completion event with final results including COMCAM features."""
     data = {
@@ -289,6 +290,8 @@ def create_completed_event(
         data["charts"] = charts
     if profile_stats is not None:
         data["profile_stats"] = profile_stats
+    if ai_review is not None:
+        data["ai_review"] = ai_review
 
     return ProgressEvent(
         type=ProgressEventType.COMPLETED,
