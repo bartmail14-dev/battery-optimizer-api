@@ -7,7 +7,7 @@ class Settings(BaseSettings):
 
     # App settings
     app_name: str = "Battery Optimizer API"
-    version: str = "1.0.2"
+    version: str = "1.0.3"  # Added CAPEX, IRR, peak_reduction to scenario_result
     debug: bool = False
 
     # Server settings
