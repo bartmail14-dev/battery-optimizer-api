@@ -28,6 +28,7 @@ from fastapi.responses import StreamingResponse
 from typing import AsyncGenerator, List, Optional
 import asyncio
 import time
+import json
 import structlog
 import pandas as pd
 from io import BytesIO
@@ -220,6 +221,8 @@ async def analyze_battery_stream(
     capacity_tariff: float = Form(12.50),
     # Location (for AI review context)
     postcode: Optional[str] = Form(None),
+    # Enrichment data (JSON string from frontend)
+    enrichment_json: Optional[str] = Form(None),
     # COMCAM Features
     enable_revenue_streams: bool = Form(True),
     enable_growth_scenarios: bool = Form(True),
@@ -263,6 +266,30 @@ async def analyze_battery_stream(
         """Generator that yields SSE events."""
 
         try:
+            # === PARSE ENRICHMENT DATA ===
+            enrichment_data = None
+            subsidy_reduction = 0.0
+            if enrichment_json:
+                try:
+                    enrichment_data = json.loads(enrichment_json)
+                    # Calculate subsidy reduction from enrichment data
+                    subsidies = enrichment_data.get('subsidies', {})
+                    if subsidies:
+                        # EIA fiscal benefit (VPB savings)
+                        eia = subsidies.get('eia', {})
+                        if eia.get('eligible'):
+                            subsidy_reduction += eia.get('vpb_voordeel_26pct', 0)
+                        # ISDE direct subsidy
+                        if subsidies.get('isde_eligible'):
+                            subsidy_reduction += subsidies.get('isde_bedrag', 0)
+                    logger.info(
+                        "Enrichment data parsed",
+                        has_subsidies=bool(subsidies),
+                        subsidy_reduction=subsidy_reduction
+                    )
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning(f"Failed to parse enrichment JSON: {e}")
+
             # === PHASE 1: LOAD PROFILE ===
             yield create_phase_event(
                 phase="profile_loading",
@@ -920,17 +947,20 @@ async def analyze_battery_stream(
                     phase="ai_review",
                 ).to_sse()
 
-                # Build enrichment-like data from tariffs for AI context
-                enrichment_for_ai = {
-                    "netbeheerder": "Onbekend",
-                    "netbeheer_tarieven": {
-                        "capaciteitstarief_kw_maand": capacity_tariff,
-                    },
-                    "commodity_prijzen": {
-                        "piek_gemiddelde": peak_rate * 1000,  # Convert to €/MWh
-                        "dal_gemiddelde": off_peak_rate * 1000,
-                    },
-                }
+                # Use real enrichment data if available, otherwise build from tariffs
+                if enrichment_data:
+                    enrichment_for_ai = enrichment_data
+                else:
+                    enrichment_for_ai = {
+                        "netbeheerder": "Onbekend",
+                        "netbeheer_tarieven": {
+                            "capaciteitstarief_kw_maand": capacity_tariff,
+                        },
+                        "commodity_prijzen": {
+                            "piek_gemiddelde": peak_rate * 1000,  # Convert to €/MWh
+                            "dal_gemiddelde": off_peak_rate * 1000,
+                        },
+                    }
 
                 gemini_reviewer = get_gemini_reviewer()
                 review_result = await gemini_reviewer.review_analysis(
@@ -948,7 +978,21 @@ async def analyze_battery_stream(
                     confidence=review_result.confidence_level,
                 )
             except Exception as e:
+                import traceback
                 logger.warning(f"AI review failed (continuing without): {e}")
+                print(f"[AI REVIEW ERROR] {type(e).__name__}: {e}", flush=True)
+                traceback.print_exc()
+
+            # Build enrichment summary for frontend
+            enrichment_summary = None
+            if enrichment_data or subsidy_reduction > 0:
+                congestie = enrichment_data.get('congestie', {}) if enrichment_data else {}
+                enrichment_summary = {
+                    "subsidies_applied": subsidy_reduction,
+                    "congestie_status": congestie.get('afname_status'),
+                    "teruglevering_toegestaan": congestie.get('teruglevering_toegestaan', True),
+                    "netbeheerder": enrichment_data.get('netbeheerder') if enrichment_data else None,
+                }
 
             yield create_completed_event(
                 optimal_size_kwh=optimal["size_kwh"],
@@ -960,6 +1004,7 @@ async def analyze_battery_stream(
                 charts=charts,
                 profile_stats=profile_stats,
                 ai_review=ai_review,
+                enrichment_summary=enrichment_summary,
             ).to_sse()
 
             logger.info(
